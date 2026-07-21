@@ -51,6 +51,32 @@
           <label>图片模型名称<input id="imageModel" name="imageModel" type="text" placeholder="gpt-image-1" /></label>
           <label>图片超时秒数<input id="imageTimeoutSeconds" name="imageTimeoutSeconds" type="number" min="30" max="300" step="10" value="180" /></label>
           <label class="wide-label">图片 API Key<input id="imageApiKey" name="imageApiKey" type="password" autocomplete="new-password" placeholder="留空则使用文案 API Key" /></label>
+          <div class="wide-label settings-divider">沉浸模式 · 语音识别</div>
+          <label>识别方式
+            <select id="transcriptionMode" name="transcriptionMode">
+              <option value="local">本地 whisper.cpp</option>
+              <option value="openai">OpenAI Audio API</option>
+              <option value="mimo">小米 MiMo Chat 音频协议</option>
+            </select>
+          </label>
+          <label>识别模型<input id="transcriptionModel" name="transcriptionModel" type="text" required placeholder="whisper-1" /></label>
+          <label class="wide-label">识别接口地址<input id="transcriptionBaseUrl" name="transcriptionBaseUrl" type="url" required placeholder="本地 http://127.0.0.1:8080/inference，或服务商 /v1" /></label>
+          <label>识别超时秒数<input id="transcriptionTimeoutSeconds" name="transcriptionTimeoutSeconds" type="number" min="15" max="300" step="5" value="120" /></label>
+          <label>识别 API Key<input id="transcriptionApiKey" name="transcriptionApiKey" type="password" autocomplete="new-password" placeholder="本地模式不需要" /></label>
+          <div class="wide-label settings-divider">沉浸模式 · 语音合成</div>
+          <label>合成方式
+            <select id="speechMode" name="speechMode"><option value="openai">OpenAI Audio API</option><option value="mimo">小米 MiMo Chat 音频协议</option></select>
+          </label>
+          <label>合成接口地址<input id="speechBaseUrl" name="speechBaseUrl" type="url" placeholder="https://api.openai.com/v1（留空使用浏览器朗读）" /></label>
+          <label>合成模型<input id="speechModel" name="speechModel" type="text" required placeholder="gpt-4o-mini-tts" /></label>
+          <label>声音<input id="speechVoice" name="speechVoice" type="text" required placeholder="alloy" /></label>
+          <label>音频格式
+            <select id="speechFormat" name="speechFormat"><option value="mp3">MP3</option><option value="opus">Opus</option><option value="aac">AAC</option><option value="flac">FLAC</option><option value="wav">WAV</option></select>
+          </label>
+          <label>语速<input id="speechSpeed" name="speechSpeed" type="number" min="0.25" max="4" step="0.05" value="1" /></label>
+          <label>合成超时秒数<input id="speechTimeoutSeconds" name="speechTimeoutSeconds" type="number" min="15" max="300" step="5" value="120" /></label>
+          <label class="wide-label">语气指令<input id="speechInstruction" name="speechInstruction" type="text" placeholder="用自然、清晰、有情绪但不过度夸张的中文语气说话。" /></label>
+          <label class="wide-label">合成 API Key<input id="speechApiKey" name="speechApiKey" type="password" autocomplete="new-password" placeholder="留空则使用对话 API Key" /></label>
           <label class="wide-label">新的后台访问码
             <input id="newAdminPassword" name="newAdminPassword" type="password" autocomplete="new-password" placeholder="留空则不修改" />
           </label>
@@ -58,10 +84,12 @@
             <button type="submit">保存配置</button>
             <button id="testChatConnection" class="secondary-button" type="button">测试对话</button>
             <button id="testImageConnection" class="secondary-button" type="button">测试图片</button>
+            <button id="testTranscriptionConnection" class="secondary-button" type="button">测试语音识别</button>
+            <button id="testSpeechConnection" class="secondary-button" type="button">测试语音合成</button>
             <span id="saveStatus" role="status"></span>
           </div>
         </form>
-        <p class="form-note">支持 OpenAI Chat Completions 兼容服务商。接口地址可填根地址、<code>/v1</code> 地址，或完整 <code>/chat/completions</code> 地址；练习对话会使用 <code>stream: true</code> 流式返回。对话测试和图片测试会分别使用当前表单内容，不必先保存。</p>
+        <p class="form-note">支持标准 OpenAI Audio API、小米 MiMo Chat 音频协议和本机 whisper.cpp。MiMo 的 ASR/TTS 使用 Chat Completions，不是标准 /audio 路径；四类测试彼此独立，都会使用当前表单内容，不必先保存。</p>
       </section>
     </main>
     <script src="./admin.js"></script>

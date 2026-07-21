@@ -66,8 +66,28 @@ function migrateLegacyScenes() {
   return { changed: migrated > 0, message: `已迁移旧场景 ${migrated} 个到 scene-configs/generated` };
 }
 
+function migrateSceneVoices() {
+  if (!fs.existsSync(publishedScenesDir)) return { changed: false, message: "没有发现已生成场景" };
+  let migrated = 0;
+  for (const id of fs.readdirSync(publishedScenesDir)) {
+    const scenePath = path.join(publishedScenesDir, id, "scene.json");
+    const scene = readJson(scenePath);
+    if (!scene || scene.opponentGender) continue;
+    const description = `${scene.intro || ""}${scene.opponentPrompt || ""}`;
+    const male = /他|男性|男友|丈夫|父亲|哥哥|弟弟/.test(description);
+    const female = /她|女性|女友|妻子|母亲|姐姐|妹妹/.test(description);
+    scene.opponentGender = male && !female ? "male" : "female";
+    scene.ttsVoice = scene.opponentGender === "male" ? "苏打" : "冰糖";
+    scene.voiceProfile = `${scene.opponentGender === "male" ? "男性" : "女性"}中文声音，年龄和声音质感符合场景中的争吵方，表达自然真实。`;
+    scene.openingSpeechStyle = "带着克制的不耐烦，语速中等，反问处稍加重音，句间停顿自然。";
+    writeJson(scenePath, scene);
+    migrated += 1;
+  }
+  return { changed: migrated > 0, message: `已为历史生成场景补充语音配置 ${migrated} 个` };
+}
+
 try {
-  const results = [migrateConfig(), migrateLegacyJobs(), migrateLegacyScenes()];
+  const results = [migrateConfig(), migrateLegacyJobs(), migrateLegacyScenes(), migrateSceneVoices()];
   for (const result of results) console.log(`${result.changed ? "✓" : "-"} ${result.message}`);
 } finally {
   database.close();

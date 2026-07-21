@@ -10,3 +10,7 @@ scene-configs/generated/
 
 # Local temporary output.
 *.log
+
+# Locally built speech recognition runtime and model weights.
+.local/
+.idea/

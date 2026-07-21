@@ -7,9 +7,11 @@ const saveStatus = document.querySelector("#saveStatus");
 const connectionBadge = document.querySelector("#connectionBadge");
 const testChatConnectionButton = document.querySelector("#testChatConnection");
 const testImageConnectionButton = document.querySelector("#testImageConnection");
+const testTranscriptionConnectionButton = document.querySelector("#testTranscriptionConnection");
+const testSpeechConnectionButton = document.querySelector("#testSpeechConnection");
 let accessCode = "";
 
-const fields = ["baseUrl", "model", "temperature", "systemPrompt", "imageBaseUrl", "imageModel", "imageTimeoutSeconds"];
+const fields = ["baseUrl", "model", "temperature", "systemPrompt", "imageBaseUrl", "imageModel", "imageTimeoutSeconds", "transcriptionMode", "transcriptionBaseUrl", "transcriptionModel", "transcriptionTimeoutSeconds", "speechMode", "speechBaseUrl", "speechModel", "speechVoice", "speechInstruction", "speechFormat", "speechSpeed", "speechTimeoutSeconds"];
 
 function authHeaders() {
   return { "Content-Type": "application/json", "x-admin-password": accessCode };
@@ -33,6 +35,8 @@ async function loadConfig() {
   });
   document.querySelector("#apiKey").placeholder = config.hasApiKey ? "已保存密钥，留空则不修改" : "请输入 API Key";
   document.querySelector("#imageApiKey").placeholder = config.hasImageApiKey ? "已保存或复用文案密钥，留空则不修改" : "留空则复用文案 API Key";
+  document.querySelector("#transcriptionApiKey").placeholder = config.hasTranscriptionApiKey ? "已保存密钥，留空则不修改" : "本地模式不需要";
+  document.querySelector("#speechApiKey").placeholder = config.hasSpeechApiKey ? "已保存或复用对话密钥，留空则不修改" : "留空则复用对话 API Key";
   connectionBadge.textContent = config.hasApiKey ? "已配置密钥" : "未配置密钥";
   connectionBadge.dataset.ready = String(config.hasApiKey);
 }
@@ -66,6 +70,8 @@ settingsForm.addEventListener("submit", async (event) => {
     if (payload.newAdminPassword) accessCode = payload.newAdminPassword;
     document.querySelector("#apiKey").value = "";
     document.querySelector("#imageApiKey").value = "";
+    document.querySelector("#transcriptionApiKey").value = "";
+    document.querySelector("#speechApiKey").value = "";
     document.querySelector("#newAdminPassword").value = "";
     await loadConfig();
     setStatus("已保存", "success");
@@ -103,4 +109,26 @@ testChatConnectionButton.addEventListener("click", () => {
 
 testImageConnectionButton.addEventListener("click", () => {
   testConnection(testImageConnectionButton, "/api/admin/test/image", "图片");
+});
+
+testTranscriptionConnectionButton.addEventListener("click", () => {
+  testConnection(testTranscriptionConnectionButton, "/api/admin/test/transcription", "语音识别");
+});
+
+testSpeechConnectionButton.addEventListener("click", () => {
+  testConnection(testSpeechConnectionButton, "/api/admin/test/speech", "语音合成");
+});
+
+document.querySelector("#transcriptionMode").addEventListener("change", (event) => {
+  if (event.target.value !== "mimo") return;
+  document.querySelector("#transcriptionBaseUrl").value = document.querySelector("#baseUrl").value || "https://api.xiaomimimo.com/v1";
+  document.querySelector("#transcriptionModel").value = "mimo-v2.5-asr";
+});
+
+document.querySelector("#speechMode").addEventListener("change", (event) => {
+  if (event.target.value !== "mimo") return;
+  document.querySelector("#speechBaseUrl").value = document.querySelector("#baseUrl").value || "https://api.xiaomimimo.com/v1";
+  document.querySelector("#speechModel").value = "mimo-v2.5-tts";
+  document.querySelector("#speechVoice").value = "mimo_default";
+  document.querySelector("#speechFormat").value = "wav";
 });

@@ -28,6 +28,7 @@ function createDatabase(filePath) {
       id TEXT PRIMARY KEY,
       token_hash TEXT NOT NULL,
       scene_id TEXT NOT NULL,
+      mode TEXT NOT NULL DEFAULT 'training',
       coach_enabled INTEGER NOT NULL DEFAULT 0,
       status TEXT NOT NULL DEFAULT 'active',
       lock_token TEXT,
@@ -42,6 +43,7 @@ function createDatabase(filePath) {
       request_id TEXT NOT NULL,
       role TEXT NOT NULL CHECK(role IN ('user', 'opponent', 'coach')),
       content TEXT NOT NULL,
+      speech_style TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL,
       UNIQUE(session_id, request_id, role)
     );
@@ -74,14 +76,23 @@ function createDatabase(filePath) {
     CREATE INDEX IF NOT EXISTS scene_jobs_status ON scene_jobs(status);
   `);
 
+  const sessionColumns = db.prepare("PRAGMA table_info(sessions)").all().map((column) => column.name);
+  if (!sessionColumns.includes("mode")) {
+    db.exec("ALTER TABLE sessions ADD COLUMN mode TEXT NOT NULL DEFAULT 'training'");
+  }
+  const messageColumns = db.prepare("PRAGMA table_info(messages)").all().map((column) => column.name);
+  if (!messageColumns.includes("speech_style")) {
+    db.exec("ALTER TABLE messages ADD COLUMN speech_style TEXT NOT NULL DEFAULT ''");
+  }
+
   const statements = {
-    insertSession: db.prepare("INSERT INTO sessions (id, token_hash, scene_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?)"),
+    insertSession: db.prepare("INSERT INTO sessions (id, token_hash, scene_id, mode, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)"),
     getSessionByToken: db.prepare("SELECT * FROM sessions WHERE id = ? AND token_hash = ?"),
     getSessionById: db.prepare("SELECT * FROM sessions WHERE id = ?"),
     updateCoach: db.prepare("UPDATE sessions SET coach_enabled = ?, updated_at = ? WHERE id = ?"),
     claimSession: db.prepare("UPDATE sessions SET lock_token = ?, lock_until = ?, updated_at = ? WHERE id = ? AND (lock_until IS NULL OR lock_until < ?)"),
     releaseSession: db.prepare("UPDATE sessions SET lock_token = NULL, lock_until = NULL, updated_at = ? WHERE id = ? AND lock_token = ?"),
-    insertMessage: db.prepare("INSERT OR IGNORE INTO messages (session_id, request_id, role, content, created_at) VALUES (?, ?, ?, ?, ?)"),
+    insertMessage: db.prepare("INSERT OR IGNORE INTO messages (session_id, request_id, role, content, speech_style, created_at) VALUES (?, ?, ?, ?, ?, ?)"),
     getMessage: db.prepare("SELECT * FROM messages WHERE session_id = ? AND request_id = ? AND role = ?"),
     listMessages: db.prepare("SELECT * FROM messages WHERE session_id = ? ORDER BY id"),
     listArgumentMessages: db.prepare("SELECT * FROM messages WHERE session_id = ? AND role IN ('user', 'opponent') ORDER BY id"),
@@ -109,6 +120,7 @@ function createDatabase(filePath) {
     return {
       id: row.id,
       sceneId: row.scene_id,
+      mode: row.mode || "training",
       coachEnabled: Boolean(row.coach_enabled),
       status: row.status,
       messageCount: Number(counts?.total || 0),
@@ -119,7 +131,7 @@ function createDatabase(filePath) {
   }
 
   function mapMessage(row) {
-    return row ? { id: Number(row.id), requestId: row.request_id, role: row.role, content: row.content, createdAt: row.created_at } : null;
+    return row ? { id: Number(row.id), requestId: row.request_id, role: row.role, content: row.content, speechStyle: row.speech_style || "", createdAt: row.created_at } : null;
   }
 
   function mapJob(row) {
@@ -135,14 +147,14 @@ function createDatabase(filePath) {
   return {
     close() { db.close(); },
 
-    createSession(sceneId, openingMessage) {
+    createSession(sceneId, openingMessage, mode = "training", openingSpeechStyle = "") {
       const id = `session-${crypto.randomUUID()}`;
       const token = crypto.randomBytes(32).toString("base64url");
       const createdAt = nowIso();
       db.exec("BEGIN IMMEDIATE");
       try {
-        statements.insertSession.run(id, hashToken(token), sceneId, createdAt, createdAt);
-        statements.insertMessage.run(id, "opening", "opponent", openingMessage, createdAt);
+        statements.insertSession.run(id, hashToken(token), sceneId, mode, createdAt, createdAt);
+        statements.insertMessage.run(id, "opening", "opponent", openingMessage, String(openingSpeechStyle).slice(0, 1000), createdAt);
         db.exec("COMMIT");
       } catch (error) {
         db.exec("ROLLBACK");
@@ -175,8 +187,8 @@ function createDatabase(filePath) {
       statements.releaseSession.run(nowIso(), id, lockToken);
     },
 
-    appendMessage(sessionId, requestId, role, content) {
-      statements.insertMessage.run(sessionId, requestId, role, String(content).slice(0, 12000), nowIso());
+    appendMessage(sessionId, requestId, role, content, speechStyle = "") {
+      statements.insertMessage.run(sessionId, requestId, role, String(content).slice(0, 12000), String(speechStyle).slice(0, 1000), nowIso());
       return mapMessage(statements.getMessage.get(sessionId, requestId, role));
     },
 

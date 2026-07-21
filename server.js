@@ -22,11 +22,13 @@ let processingJobs = false;
 
 const defaultPrompt = `目标是帮助用户坚定、清晰、不过度攻击地表达边界。不要羞辱、操纵或鼓励报复；遇到威胁、暴力或自伤风险时，停止角色扮演，建议立即联系可信任的人或当地紧急服务。全程用简体中文。`;
 
-const opponentRolePrompt = `你是当前冲突场景里的“争吵方”，不是教练。你只回应用户刚说的话，保持场景里的立场、情绪和压力，但不要输出“教练：”、建议、评分、复盘或旁白。每次回复 1 到 3 句，像真实对话一样继续推进冲突。不要生成歧视、威胁、骚扰、煽动现实报复或人身伤害内容。`;
+const opponentRolePrompt = `你是当前冲突场景里的“争吵方”，不是教练。你只回应用户刚说的话，保持场景里的立场、情绪和压力，但不要输出“教练：”、建议、评分、复盘或旁白。每次回复 1 到 3 句，像真实对话一样继续推进冲突。不要生成歧视、威胁、骚扰、煽动现实报复或人身伤害内容。严格按两段输出：第一行以“VOICE_STYLE:”开头，用不超过80字描述这句话的情绪、语调、语速、停顿、重音和节奏，只写表演方式；第二行以“REPLY:”开头，写真正对用户说的台词。`;
 
 const coachRolePrompt = `你是“吵架练习室”里的 AI 教练，不是争吵方。你只站在用户身边给下一步建议，不替对方说话，不继续角色扮演。请用简体中文输出：1 句判断、1 句下一步策略、1 句用户可以直接说出口的话。总长度不超过 120 字。不要羞辱、操纵或鼓励报复。`;
 
 const analystRolePrompt = `你是“吵架练习室”的复盘分析师，不是争吵方，也不是实时教练。你只分析已经发生的对话，不继续角色扮演。重点观察用户如何表达事实、感受、请求和边界，以及面对压力时的沟通变化。性格部分只能描述“本次对话显示的沟通倾向”，每个倾向必须引用用户说过的话作为证据，并说明样本有限；禁止心理诊断、人格定型、道德评判或推断现实身份。返回严格 JSON，不要 markdown：{"overview":"过程概览","turningPoint":"关键转折","scores":{"clarity":0,"boundary":0,"emotionalControl":0,"listening":0},"personality":{"summary":"谨慎总结","traits":[{"name":"倾向名","evidence":"逐字复制用户发言中的一段连续原文，不加前缀，不改写","caveat":"限制说明"}]},"strengths":["优势"],"risks":["风险"],"nextSteps":["练习建议"],"suggestedReply":"一条更好的表达","disclaimer":"本报告只基于本次练习，不是心理诊断。"}。四项分数为 0 到 100 的整数；traits 2 到 4 条，其余数组 2 到 4 条。`;
+
+const finalAnswerOnlyPrompt = `不要输出思考过程、推理过程、analysis、reasoning、草稿、解释计划或 <think> 标签；只输出用户应该看到的最终内容。`;
 
 function defaultConfig() {
   return {
@@ -39,6 +41,20 @@ function defaultConfig() {
     imageModel: "gpt-image-1",
     imageApiKey: "",
     imageTimeoutSeconds: 180,
+    transcriptionMode: "local",
+    transcriptionBaseUrl: "http://127.0.0.1:8080/inference",
+    transcriptionModel: "whisper-1",
+    transcriptionApiKey: "",
+    transcriptionTimeoutSeconds: 120,
+    speechMode: "openai",
+    speechBaseUrl: "",
+    speechModel: "gpt-4o-mini-tts",
+    speechApiKey: "",
+    speechVoice: "alloy",
+    speechInstruction: "用自然、清晰、有情绪但不过度夸张的中文语气说话。",
+    speechFormat: "mp3",
+    speechSpeed: 1,
+    speechTimeoutSeconds: 120,
     adminPassword: process.env.ADMIN_PASSWORD || "admin"
   };
 }
@@ -158,12 +174,42 @@ function getBody(request) {
   });
 }
 
+function getRawBody(request, limit = 25 * 1024 * 1024) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let size = 0;
+    request.on("data", (chunk) => {
+      size += chunk.length;
+      if (size > limit) {
+        reject(new Error("音频文件不能超过 25MB"));
+        request.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    request.on("end", () => resolve(Buffer.concat(chunks)));
+    request.on("error", reject);
+  });
+}
+
 function isAdmin(request, config) {
   return request.headers["x-admin-password"] === config.adminPassword;
 }
 
 function publicConfig(config) {
-  return { baseUrl: config.baseUrl, model: config.model, temperature: config.temperature, systemPrompt: config.systemPrompt, hasApiKey: Boolean(config.apiKey), imageBaseUrl: config.imageBaseUrl, imageModel: config.imageModel, imageTimeoutSeconds: config.imageTimeoutSeconds, hasImageApiKey: Boolean(config.imageApiKey || config.apiKey) };
+  return {
+    baseUrl: config.baseUrl, model: config.model, temperature: config.temperature, systemPrompt: config.systemPrompt,
+    hasApiKey: Boolean(config.apiKey), imageBaseUrl: config.imageBaseUrl, imageModel: config.imageModel,
+    imageTimeoutSeconds: config.imageTimeoutSeconds, hasImageApiKey: Boolean(config.imageApiKey || config.apiKey),
+    transcriptionMode: config.transcriptionMode, transcriptionBaseUrl: config.transcriptionBaseUrl,
+    transcriptionModel: config.transcriptionModel, transcriptionTimeoutSeconds: config.transcriptionTimeoutSeconds,
+    hasTranscriptionApiKey: Boolean(config.transcriptionApiKey || (config.transcriptionMode === "mimo" && config.apiKey)),
+    speechMode: config.speechMode, speechBaseUrl: config.speechBaseUrl,
+    speechModel: config.speechModel, speechVoice: config.speechVoice, speechInstruction: config.speechInstruction,
+    speechFormat: config.speechFormat,
+    speechSpeed: config.speechSpeed, speechTimeoutSeconds: config.speechTimeoutSeconds,
+    hasSpeechApiKey: Boolean(config.speechApiKey || config.apiKey)
+  };
 }
 
 function trimSlash(value) {
@@ -192,7 +238,7 @@ function effectiveSafetyPrompt(config) {
 function rolePrompt(config, role) {
   const base = role === "coach" ? coachRolePrompt : role === "analyst" ? analystRolePrompt : opponentRolePrompt;
   const scenePrompt = role === "coach" ? config.sceneCoachPrompt : role === "analyst" ? config.sceneAnalysisPrompt : config.sceneOpponentPrompt;
-  return `${base}\n\n场景专属提示：${scenePrompt || ""}\n\n补充原则：${effectiveSafetyPrompt(config)}`;
+  return `${base}\n\n${finalAnswerOnlyPrompt}\n\n场景专属提示：${scenePrompt || ""}\n\n补充原则：${effectiveSafetyPrompt(config)}`;
 }
 
 function sceneForRole(scene, role) {
@@ -219,6 +265,20 @@ function mergeConfig(config, update = {}) {
     imageModel: String(update.imageModel || config.imageModel || "gpt-image-1").trim(),
     imageApiKey: update.imageApiKey ? String(update.imageApiKey).trim() : config.imageApiKey,
     imageTimeoutSeconds: Math.max(30, Math.min(300, Number(update.imageTimeoutSeconds ?? config.imageTimeoutSeconds ?? 180))),
+    transcriptionMode: ["local", "openai", "mimo"].includes(String(update.transcriptionMode ?? config.transcriptionMode)) ? String(update.transcriptionMode ?? config.transcriptionMode) : "local",
+    transcriptionBaseUrl: trimSlash(update.transcriptionBaseUrl || config.transcriptionBaseUrl || "http://127.0.0.1:8080/inference"),
+    transcriptionModel: String(update.transcriptionModel || config.transcriptionModel || "whisper-1").trim(),
+    transcriptionApiKey: update.transcriptionApiKey ? String(update.transcriptionApiKey).trim() : config.transcriptionApiKey,
+    transcriptionTimeoutSeconds: Math.max(15, Math.min(300, Number(update.transcriptionTimeoutSeconds ?? config.transcriptionTimeoutSeconds ?? 120))),
+    speechMode: String(update.speechMode ?? config.speechMode) === "mimo" ? "mimo" : "openai",
+    speechBaseUrl: update.speechBaseUrl !== undefined ? trimSlash(update.speechBaseUrl) : trimSlash(config.speechBaseUrl || ""),
+    speechModel: String(update.speechModel || config.speechModel || "gpt-4o-mini-tts").trim(),
+    speechApiKey: update.speechApiKey ? String(update.speechApiKey).trim() : config.speechApiKey,
+    speechVoice: String(update.speechVoice || config.speechVoice || "alloy").trim(),
+    speechInstruction: String(update.speechInstruction || config.speechInstruction || "用自然、清晰的中文语气说话。").trim().slice(0, 1000),
+    speechFormat: ["mp3", "opus", "aac", "flac", "wav", "pcm"].includes(update.speechFormat) ? update.speechFormat : (config.speechFormat || "mp3"),
+    speechSpeed: Math.max(0.25, Math.min(4, Number(update.speechSpeed ?? config.speechSpeed ?? 1))),
+    speechTimeoutSeconds: Math.max(15, Math.min(300, Number(update.speechTimeoutSeconds ?? config.speechTimeoutSeconds ?? 120))),
     adminPassword: update.newAdminPassword ? String(update.newAdminPassword) : config.adminPassword
   };
 }
@@ -239,19 +299,154 @@ function validateImageConfig(config) {
   return "";
 }
 
-function readChatContent(data) {
-  const content = data.choices?.[0]?.message?.content;
-  if (typeof content === "string") return content.trim();
-  if (Array.isArray(content)) return content.map((part) => typeof part === "string" ? part : part.text || "").join("").trim();
+function isAllowedServiceUrl(value) {
+  return value.startsWith("https://") || value.startsWith("http://localhost") || value.startsWith("http://127.0.0.1");
+}
+
+function validateTranscriptionConfig(config) {
+  if (!isAllowedServiceUrl(config.transcriptionBaseUrl)) return "语音识别地址必须使用 HTTPS，或指向本机服务";
+  if (!config.transcriptionModel) return "请填写语音识别模型名称";
+  if (config.transcriptionMode === "openai" && !config.transcriptionApiKey) return "OpenAI Audio 语音识别需要独立 API Key";
+  if (config.transcriptionMode === "mimo" && !config.transcriptionApiKey && !config.apiKey) return "MiMo 语音识别需要 API Key，或可复用的对话 API Key";
   return "";
+}
+
+function validateSpeechConfig(config) {
+  if (!isAllowedServiceUrl(config.speechBaseUrl)) return "语音合成地址必须使用 HTTPS，或指向本机服务";
+  if (!config.speechModel || !config.speechVoice) return "请填写语音合成模型和声音";
+  if (!config.speechApiKey && !config.apiKey) return "请填写语音合成 API Key，或填写可复用的对话 API Key";
+  return "";
+}
+
+function stripThinkingContent(value, { trim = true } = {}) {
+  let content = String(value || "");
+  content = content.replace(/<think(?:ing)?\b[^>]*>[\s\S]*?<\/think(?:ing)?>/gi, "");
+  content = content.replace(/<reasoning\b[^>]*>[\s\S]*?<\/reasoning>/gi, "");
+  content = content.replace(/<analysis\b[^>]*>[\s\S]*?<\/analysis>/gi, "");
+  content = content.replace(/<think(?:ing)?\b[^>]*>[\s\S]*$/gi, "");
+  content = content.replace(/<reasoning\b[^>]*>[\s\S]*$/gi, "");
+  content = content.replace(/<analysis\b[^>]*>[\s\S]*$/gi, "");
+  const markers = ["最终答案：", "最终答复：", "最终回复：", "Final answer:", "Final:", "Answer:"];
+  for (const marker of markers) {
+    const index = content.toLowerCase().lastIndexOf(marker.toLowerCase());
+    if (index >= 0) content = content.slice(index + marker.length);
+  }
+  return trim ? content.trim() : content;
+}
+
+function extractJsonObject(content) {
+  const clean = stripThinkingContent(content).replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+  if (clean.startsWith("{") && clean.endsWith("}")) return clean;
+  const start = clean.indexOf("{");
+  const end = clean.lastIndexOf("}");
+  if (start >= 0 && end > start) return clean.slice(start, end + 1);
+  return clean;
+}
+
+function readContentParts(content) {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content.map((part) => {
+      if (typeof part === "string") return part;
+      if (part?.type && /reason/i.test(part.type)) return "";
+      return part?.text || part?.content || "";
+    }).join("");
+  }
+  return "";
+}
+
+function readChatContent(data, { allowThinking = false } = {}) {
+  const content = data.choices?.[0]?.message?.content;
+  const text = readContentParts(content || data.output_text || data.content || "");
+  return allowThinking ? String(text || "").trim() : stripThinkingContent(text);
 }
 
 function readDeltaContent(data) {
   const delta = data.choices?.[0]?.delta;
-  const content = delta?.content ?? delta?.reasoning_content ?? data.choices?.[0]?.text ?? data.content ?? "";
-  if (typeof content === "string") return content;
-  if (Array.isArray(content)) return content.map((part) => typeof part === "string" ? part : part.text || "").join("");
-  return "";
+  if (delta?.reasoning_content || delta?.reasoning || delta?.thinking || data.reasoning || data.thinking) return "";
+  return readContentParts(delta?.content ?? data.choices?.[0]?.text ?? data.content ?? "");
+}
+
+function createThinkingFilter(onChunk) {
+  let pending = "";
+  let inThinking = false;
+  const tagPattern = /<\/?(?:think|thinking|reasoning|analysis)\b[^>]*>/i;
+
+  return (chunk, flush = false) => {
+    pending += String(chunk || "");
+    let visible = "";
+
+    while (pending) {
+      const match = pending.match(tagPattern);
+      if (!match) {
+        if (inThinking) {
+          if (flush) pending = "";
+          else pending = pending.slice(Math.max(0, pending.length - 32));
+          break;
+        }
+        const keep = flush ? 0 : 32;
+        if (pending.length <= keep) break;
+        visible += pending.slice(0, pending.length - keep);
+        pending = keep > 0 ? pending.slice(-keep) : "";
+        break;
+      }
+
+      const before = pending.slice(0, match.index);
+      const tag = match[0].toLowerCase();
+      if (!inThinking && tag.startsWith("</")) visible += before;
+      inThinking = !tag.startsWith("</");
+      pending = pending.slice(match.index + match[0].length);
+    }
+
+    if (flush && pending && !inThinking) {
+      visible += pending;
+      pending = "";
+    }
+
+    const clean = stripThinkingContent(visible, { trim: false });
+    if (clean) onChunk(clean);
+  };
+}
+
+function parseOpponentOutput(content, fallbackStyle = "") {
+  const value = String(content || "").trim();
+  const match = value.match(/^VOICE_STYLE:\s*([^\n]*)\nREPLY:\s*([\s\S]*)$/i);
+  if (!match) return { text: value.replace(/^REPLY:\s*/i, "").trim(), speechStyle: fallbackStyle };
+  return { text: match[2].trim(), speechStyle: match[1].trim().slice(0, 1000) || fallbackStyle };
+}
+
+function createOpponentOutputFilter(onChunk, fallbackStyle = "") {
+  let buffer = "";
+  let text = "";
+  let speechStyle = fallbackStyle;
+  let replyStarted = false;
+  return {
+    push(chunk) {
+      if (replyStarted) {
+        text += chunk;
+        onChunk(chunk);
+        return;
+      }
+      buffer += String(chunk || "");
+      const marker = buffer.match(/\nREPLY:\s*/i);
+      if (!marker) return;
+      const prefix = buffer.slice(0, marker.index);
+      speechStyle = prefix.trim().replace(/^VOICE_STYLE:\s*/i, "").trim().slice(0, 1000) || fallbackStyle;
+      const visible = buffer.slice(marker.index + marker[0].length);
+      buffer = "";
+      replyStarted = true;
+      if (visible) { text += visible; onChunk(visible); }
+    },
+    finish() {
+      if (!replyStarted) {
+        const parsed = parseOpponentOutput(buffer, fallbackStyle);
+        text = parsed.text;
+        speechStyle = parsed.speechStyle;
+        if (text) onChunk(text);
+      }
+      return { text: text.trim(), speechStyle };
+    }
+  };
 }
 
 function sanitizeMessages(messages) {
@@ -285,7 +480,7 @@ function analysisMessages(messages, coachHistory = []) {
 }
 
 function parseAnalysis(content) {
-  const clean = String(content || "").replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+  const clean = extractJsonObject(content);
   const result = JSON.parse(clean);
   const clampScore = (value) => Math.max(0, Math.min(100, Math.round(Number(value) || 0)));
   const stringList = (value, max = 4) => Array.isArray(value) ? value.slice(0, max).map((item) => String(item).slice(0, 240)).filter(Boolean) : [];
@@ -458,10 +653,17 @@ async function streamModel(config, scene, messages, onChunk, signal, role = "opp
   if ((response.headers.get("content-type") || "").includes("application/json")) {
     const data = await response.json();
     const content = readChatContent(data);
+    if (role === "opponent") {
+      const result = parseOpponentOutput(content, scene.openingSpeechStyle || scene.voiceProfile || "");
+      if (result.text) onChunk(result.text);
+      return result;
+    }
     if (content) onChunk(content);
-    return;
+    return { text: content, speechStyle: "" };
   }
 
+  const opponentOutput = role === "opponent" ? createOpponentOutputFilter(onChunk, scene.openingSpeechStyle || scene.voiceProfile || "") : null;
+  const emitVisibleChunk = createThinkingFilter(opponentOutput ? (chunk) => opponentOutput.push(chunk) : onChunk);
   const decoder = new TextDecoder();
   let buffer = "";
   for await (const chunk of response.body) {
@@ -473,40 +675,62 @@ async function streamModel(config, scene, messages, onChunk, signal, role = "opp
       if (!trimmed || trimmed.startsWith(":")) continue;
       if (!trimmed.startsWith("data:")) continue;
       const payload = trimmed.slice(5).trim();
-      if (payload === "[DONE]") return;
+      if (payload === "[DONE]") {
+        emitVisibleChunk("", true);
+        return opponentOutput ? opponentOutput.finish() : { text: "", speechStyle: "" };
+      }
       try {
         const text = readDeltaContent(JSON.parse(payload));
-        if (text) onChunk(text);
+        if (text) emitVisibleChunk(text);
       } catch {
         continue;
       }
     }
   }
+  emitVisibleChunk("", true);
+  return opponentOutput ? opponentOutput.finish() : { text: "", speechStyle: "" };
 }
 
 function parseScene(content) {
-  const clean = content.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+  const clean = extractJsonObject(content);
   const result = JSON.parse(clean);
   if (!result.title || !result.opponent || !Array.isArray(result.introLines) || result.introLines.length !== 3) throw new Error("文案模型没有按要求返回场景结构");
-  return {
+  return normalizeSceneVoice({
     title: String(result.title).slice(0, 80), kicker: String(result.kicker || "新的对峙。"), intro: String(result.intro || "把你想说的话留在这里。"),
     introLines: result.introLines.map((line) => String(line).slice(0, 70)),
     opponent: String(result.opponent).slice(0, 250),
     opponentPrompt: String(result.opponentPrompt || "").slice(0, 1000),
     coachPrompt: String(result.coachPrompt || "").slice(0, 1000),
     analysisPrompt: String(result.analysisPrompt || "重点分析用户如何表达边界、请求和情绪，并结合原话说明沟通倾向。").slice(0, 1000),
+    opponentGender: String(result.opponentGender || "unspecified"),
+    ttsVoice: String(result.ttsVoice || ""),
+    voiceProfile: String(result.voiceProfile || "").slice(0, 1000),
+    openingSpeechStyle: String(result.openingSpeechStyle || "").slice(0, 1000),
     artPrompt: String(result.artPrompt || "charcoal and ink narrative scene").slice(0, 1200)
+  });
+}
+
+function normalizeSceneVoice(scene) {
+  const gender = scene.opponentGender === "female" ? "female" : scene.opponentGender === "male" ? "male" : "unspecified";
+  const allowed = gender === "female" ? ["冰糖", "茉莉"] : gender === "male" ? ["苏打", "白桦"] : ["冰糖", "茉莉", "苏打", "白桦"];
+  const defaultVoice = gender === "male" ? "苏打" : "冰糖";
+  return {
+    ...scene,
+    opponentGender: gender,
+    ttsVoice: allowed.includes(scene.ttsVoice) ? scene.ttsVoice : defaultVoice,
+    voiceProfile: String(scene.voiceProfile || `${gender === "male" ? "男性" : "女性"}中文声音，符合当前角色身份与年龄。`).slice(0, 1000),
+    openingSpeechStyle: String(scene.openingSpeechStyle || "带着克制的不耐烦，语速中等，反问处稍加重音，停顿自然。").slice(0, 1000)
   };
 }
 
 async function createSceneText(config, prompt, voice) {
   const response = await fetch(buildEndpoint(config.baseUrl, "/chat/completions"), {
     method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${config.apiKey}` },
-    body: JSON.stringify({ model: config.model, temperature: 0.85, messages: [{ role: "system", content: "你是互动叙事场景编剧。用户给出一段想争吵的事。返回严格 JSON，不要 markdown：{title,kicker,intro,introLines:[三句中文],opponent,opponentPrompt,coachPrompt,analysisPrompt,artPrompt}。文案简体中文，克制、具体、非暴力；opponent 是对方的第一句；opponentPrompt 描述争吵方的人设、说话方式和施压方式；coachPrompt 描述实时帮忙专家应该重点教什么；analysisPrompt 描述复盘分析师在这个场景中要重点观察的表达模式，不能做心理诊断；artPrompt 用英文，描述原创的 charcoal and ink hand-drawn collage illustration, wide 16:9, two people in conflict, no text, no logo, no watermark。" }, { role: "user", content: `用户描述：${prompt}\n对方声音偏好：${voice}` }] }), signal: AbortSignal.timeout(30000)
+    body: JSON.stringify({ model: config.model, temperature: 0.85, messages: [{ role: "system", content: "你是互动叙事场景编剧。可以在内部进行必要推理，但最终回复只能包含一个严格 JSON 对象，不要 markdown，不要解释，不要把思考过程写进结果：{title,kicker,intro,introLines:[三句中文],opponent,opponentPrompt,coachPrompt,analysisPrompt,opponentGender,ttsVoice,voiceProfile,openingSpeechStyle,artPrompt}。文案简体中文，克制、具体、非暴力；opponent 是对方的第一句；opponentGender 只能是 male 或 female，并遵循用户声音偏好；女性 ttsVoice 只能选冰糖或茉莉，男性只能选苏打或白桦；voiceProfile 描述角色年龄、声音质感和说话习惯；openingSpeechStyle 描述第一句的情绪、语调、语速、停顿、重音和节奏；opponentPrompt 描述争吵方的人设、说话方式和施压方式；coachPrompt 描述实时帮忙专家应该重点教什么；analysisPrompt 描述复盘分析师在这个场景中要重点观察的表达模式，不能做心理诊断；artPrompt 用英文，描述原创的 charcoal and ink hand-drawn collage illustration, wide 16:9, two people in conflict, no text, no logo, no watermark。" }, { role: "user", content: `用户描述：${prompt}\n对方声音偏好：${voice}` }] }), signal: AbortSignal.timeout(30000)
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data.error?.message || `文案模型返回 ${response.status}`);
-  return parseScene(data.choices?.[0]?.message?.content || "");
+  return parseScene(readChatContent(data, { allowThinking: true }));
 }
 
 function sceneConfigPath(id) {
@@ -523,7 +747,7 @@ function readSceneConfig(id) {
   const primary = sceneConfigPath(id);
   const filePath = fs.existsSync(published) ? published : fs.existsSync(primary) ? primary : "";
   if (!filePath) return null;
-  return JSON.parse(fs.readFileSync(filePath, "utf8"));
+  return normalizeSceneVoice(JSON.parse(fs.readFileSync(filePath, "utf8")));
 }
 
 function detectImageFormat(buffer) {
@@ -561,7 +785,7 @@ async function createSceneImage(config, artPrompt) {
 }
 
 function validateSceneDefinition(scene) {
-  const requiredStrings = ["title", "kicker", "intro", "opponent", "opponentPrompt", "coachPrompt", "analysisPrompt", "artPrompt", "art"];
+  const requiredStrings = ["title", "kicker", "intro", "opponent", "opponentPrompt", "coachPrompt", "analysisPrompt", "opponentGender", "ttsVoice", "voiceProfile", "openingSpeechStyle", "artPrompt", "art"];
   for (const key of requiredStrings) {
     if (!String(scene[key] || "").trim()) throw new Error(`场景配置缺少字段：${key}`);
   }
@@ -691,6 +915,129 @@ async function testSceneImage(config) {
   return item.b64_json ? "图片生成正常，已收到 b64_json" : "图片生成正常，已收到图片 URL";
 }
 
+function audioExtension(mimeType) {
+  if (mimeType.includes("wav")) return "wav";
+  if (mimeType.includes("mpeg") || mimeType.includes("mp3")) return "mp3";
+  if (mimeType.includes("ogg")) return "ogg";
+  if (mimeType.includes("mp4") || mimeType.includes("m4a")) return "m4a";
+  return "webm";
+}
+
+function transcriptionEndpoint(config) {
+  if (config.transcriptionMode === "local") return buildEndpoint(config.transcriptionBaseUrl, "/inference");
+  if (config.transcriptionMode === "mimo") return buildEndpoint(config.transcriptionBaseUrl, "/chat/completions");
+  return buildEndpoint(config.transcriptionBaseUrl, "/audio/transcriptions");
+}
+
+async function callTranscription(config, audio, mimeType = "audio/webm", { allowEmpty = false } = {}) {
+  const endpoint = transcriptionEndpoint(config);
+  if (config.transcriptionMode === "mimo") {
+    const apiKey = config.transcriptionApiKey || config.apiKey;
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model: config.transcriptionModel || "mimo-v2.5-asr",
+        messages: [{ role: "user", content: [{ type: "input_audio", input_audio: { data: `data:${mimeType};base64,${audio.toString("base64")}` } }] }],
+        asr_options: { language: "auto" }
+      }),
+      signal: AbortSignal.timeout(Number(config.transcriptionTimeoutSeconds || 120) * 1000)
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data?.error?.message || data?.error || data?.message || `MiMo 语音识别返回 ${response.status}`);
+    const text = readChatContent(data);
+    if (!text && !allowEmpty) throw new Error("MiMo 语音识别没有返回文字，请靠近麦克风再说一次");
+    return text;
+  }
+  const form = new FormData();
+  form.append("file", new Blob([audio], { type: mimeType }), `recording.${audioExtension(mimeType)}`);
+  form.append("model", config.transcriptionModel || "whisper-1");
+  form.append("response_format", "json");
+  form.append("temperature", "0");
+  form.append("language", "zh");
+  const headers = {};
+  if (config.transcriptionMode === "openai" && config.transcriptionApiKey) headers.Authorization = `Bearer ${config.transcriptionApiKey}`;
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers,
+    body: form,
+    signal: AbortSignal.timeout(Number(config.transcriptionTimeoutSeconds || 120) * 1000)
+  });
+  const responseType = response.headers.get("content-type") || "";
+  const data = responseType.includes("application/json") ? await response.json().catch(() => ({})) : await response.text();
+  if (!response.ok) {
+    const detail = typeof data === "string" ? data.trim() : data?.error?.message || data?.error || data?.message;
+    throw new Error(detail || `语音识别服务返回 ${response.status}`);
+  }
+  const text = String(typeof data === "string" ? data : data.text || data.transcription || data.result || "").trim();
+  if (!text && !allowEmpty) throw new Error("语音识别服务没有返回文字，请靠近麦克风再说一次");
+  return text;
+}
+
+function speechEndpoint(config) {
+  return buildEndpoint(config.speechBaseUrl, config.speechMode === "mimo" ? "/chat/completions" : "/audio/speech");
+}
+
+async function callSpeech(config, input, options = {}) {
+  const apiKey = config.speechApiKey || config.apiKey;
+  if (config.speechMode === "mimo") {
+    const endpoint = speechEndpoint(config);
+    const format = config.speechFormat || "wav";
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model: config.speechModel || "mimo-v2.5-tts",
+        messages: [
+          { role: "user", content: [config.speechInstruction, options.voiceProfile, options.speechStyle].filter(Boolean).join("\n") || "用自然、清晰的中文语气说话。" },
+          { role: "assistant", content: String(input).slice(0, 4096) }
+        ],
+        audio: { format, voice: options.voice || config.speechVoice || "mimo_default" }
+      }),
+      signal: AbortSignal.timeout(Number(config.speechTimeoutSeconds || 120) * 1000)
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data?.error?.message || data?.error || data?.message || `MiMo 语音合成返回 ${response.status}`);
+    const base64Audio = data?.choices?.[0]?.message?.audio?.data;
+    if (!base64Audio) throw new Error("MiMo 语音合成没有返回 choices[0].message.audio.data");
+    const buffer = Buffer.from(base64Audio, "base64");
+    if (!buffer.length) throw new Error("MiMo 语音合成返回了空音频");
+    return { buffer, contentType: format === "mp3" ? "audio/mpeg" : `audio/${format}` };
+  }
+  const endpoint = speechEndpoint(config);
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+    body: JSON.stringify({
+      model: config.speechModel,
+      voice: config.speechVoice,
+      input: String(input).slice(0, 4096),
+      response_format: config.speechFormat,
+      speed: Number(config.speechSpeed || 1)
+    }),
+    signal: AbortSignal.timeout(Number(config.speechTimeoutSeconds || 120) * 1000)
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error?.message || `语音合成服务返回 ${response.status}`);
+  }
+  const buffer = Buffer.from(await response.arrayBuffer());
+  if (!buffer.length) throw new Error("语音合成服务返回了空音频");
+  return { buffer, contentType: response.headers.get("content-type") || `audio/${config.speechFormat || "mpeg"}` };
+}
+
+function silentWav(durationMs = 300) {
+  const sampleRate = 16000;
+  const sampleCount = Math.floor(sampleRate * durationMs / 1000);
+  const buffer = Buffer.alloc(44 + sampleCount * 2);
+  buffer.write("RIFF", 0); buffer.writeUInt32LE(buffer.length - 8, 4); buffer.write("WAVE", 8);
+  buffer.write("fmt ", 12); buffer.writeUInt32LE(16, 16); buffer.writeUInt16LE(1, 20);
+  buffer.writeUInt16LE(1, 22); buffer.writeUInt32LE(sampleRate, 24); buffer.writeUInt32LE(sampleRate * 2, 28);
+  buffer.writeUInt16LE(2, 32); buffer.writeUInt16LE(16, 34); buffer.write("data", 36);
+  buffer.writeUInt32LE(sampleCount * 2, 40);
+  return buffer;
+}
+
 function sessionToken(request) {
   return String(request.headers["x-session-token"] || "");
 }
@@ -758,7 +1105,11 @@ function localSessionReport(messages) {
 
 async function handleApi(request, response, pathname) {
   const config = readConfig();
-  if (pathname === "/api/status" && request.method === "GET") return sendJson(response, 200, { configured: Boolean(config.apiKey), model: config.model });
+  if (pathname === "/api/status" && request.method === "GET") return sendJson(response, 200, {
+    configured: Boolean(config.apiKey), model: config.model,
+    transcriptionMode: config.transcriptionMode,
+    immersiveConfigured: Boolean((config.speechApiKey || config.apiKey) && config.speechBaseUrl && config.transcriptionBaseUrl)
+  });
   if ((pathname === "/api/scene-jobs" || pathname === "/api/scenes/generate") && request.method === "POST") {
     const payload = await getBody(request);
     const prompt = String(payload.prompt || "").trim();
@@ -828,11 +1179,12 @@ async function handleApi(request, response, pathname) {
     const payload = await getBody(request);
     const scene = readSceneConfig(String(payload.sceneId || ""));
     if (!scene) return sendJson(response, 404, { error: "场景不存在" });
-    const created = database.createSession(scene.id, scene.opponent);
+    const mode = payload.mode === "immersive" ? "immersive" : "training";
+    const created = database.createSession(scene.id, scene.opponent, mode, scene.openingSpeechStyle || scene.voiceProfile || "");
     return sendJson(response, 201, created);
   }
 
-  const sessionRoute = pathname.match(/^\/api\/sessions\/(session-[a-z0-9-]+)(?:\/(messages|coach|analyze))?$/);
+  const sessionRoute = pathname.match(/^\/api\/sessions\/(session-[a-z0-9-]+)(?:\/(messages|coach|analyze|transcriptions|speech))?$/);
   if (sessionRoute) {
     const sessionId = sessionRoute[1];
     const action = sessionRoute[2] || "";
@@ -846,8 +1198,48 @@ async function handleApi(request, response, pathname) {
     if (!action && request.method === "PATCH") {
       const payload = await getBody(request);
       if (typeof payload.coachEnabled !== "boolean") return sendJson(response, 400, { error: "coachEnabled 必须是布尔值" });
+      if (session.mode === "immersive" && payload.coachEnabled) return sendJson(response, 409, { error: "沉浸模式不启用帮忙专家" });
       session = database.setCoachEnabled(sessionId, payload.coachEnabled);
       return sendJson(response, 200, sessionState(session));
+    }
+
+    if (action === "transcriptions" && request.method === "POST") {
+      const configError = validateTranscriptionConfig(config);
+      if (configError) return sendJson(response, 503, { error: configError });
+      const mimeType = String(request.headers["content-type"] || "audio/webm").split(";")[0];
+      let audioBytes = 0;
+      try {
+        const audio = await getRawBody(request);
+        audioBytes = audio.length;
+        if (audio.length < 200) return sendJson(response, 400, { error: "录音内容太短，请重新录制" });
+        const text = await callTranscription(config, audio, mimeType);
+        return sendJson(response, 200, { text });
+      } catch (error) {
+        logModelError("会话语音识别", error, { sessionId, sceneId: scene.id, endpoint: transcriptionEndpoint(config), model: config.transcriptionModel, mode: config.transcriptionMode, mimeType, audioBytes });
+        return sendJson(response, 502, { error: "语音识别失败，请检查后台配置或服务端日志" });
+      }
+    }
+
+    if (action === "speech" && request.method === "POST") {
+      const configError = validateSpeechConfig(config);
+      if (configError) return sendJson(response, 503, { error: configError });
+      const payload = await getBody(request);
+      const requestId = String(payload.requestId || "");
+      const savedMessage = requestId ? database.getMessage(sessionId, requestId, "opponent") : null;
+      const input = String(savedMessage?.content || payload.input || "").trim();
+      if (!input || input.length > 4096) return sendJson(response, 400, { error: "语音文本长度必须在 1 到 4096 字之间" });
+      try {
+        const audio = await callSpeech(config, input, {
+          voice: config.speechMode === "mimo" ? scene.ttsVoice : config.speechVoice,
+          voiceProfile: scene.voiceProfile,
+          speechStyle: savedMessage?.speechStyle || scene.openingSpeechStyle
+        });
+        response.writeHead(200, { "Content-Type": audio.contentType, "Content-Length": audio.buffer.length, "Cache-Control": "no-store" });
+        return response.end(audio.buffer);
+      } catch (error) {
+        logModelError("会话语音合成", error, { sessionId, sceneId: scene.id, endpoint: speechEndpoint(config), model: config.speechModel, voice: config.speechVoice, mode: config.speechMode });
+        return sendJson(response, 502, { error: "语音合成失败，请检查后台配置或服务端日志" });
+      }
     }
 
     if (action === "messages" && request.method === "POST") {
@@ -866,6 +1258,7 @@ async function handleApi(request, response, pathname) {
 
       let started = false;
       let reply = "";
+      let speechStyle = scene.openingSpeechStyle || scene.voiceProfile || "";
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 60000);
       try {
@@ -876,14 +1269,15 @@ async function handleApi(request, response, pathname) {
           started = true;
           response.write(reply);
         } else {
-          await streamModel(config, scene, argumentMessagesForModel(sessionId), (chunk) => {
+          const modelOutput = await streamModel(config, scene, argumentMessagesForModel(sessionId), (chunk) => {
             if (!started) { streamHeaders(response); started = true; }
             reply += chunk;
             response.write(chunk);
           }, controller.signal, "opponent");
+          speechStyle = modelOutput?.speechStyle || speechStyle;
         }
         if (!reply.trim()) throw new Error("争吵方没有返回有效内容");
-        database.appendMessage(sessionId, requestId, "opponent", reply.trim());
+        database.appendMessage(sessionId, requestId, "opponent", reply.trim(), speechStyle);
         clearTimeout(timeout);
         if (!started) streamHeaders(response);
         return response.end();
@@ -901,6 +1295,7 @@ async function handleApi(request, response, pathname) {
       const payload = await getBody(request);
       const requestId = String(payload.requestId || "");
       if (!validRequestId(requestId)) return sendJson(response, 400, { error: "缺少有效的 requestId" });
+      if (session.mode === "immersive") return sendJson(response, 409, { error: "沉浸模式不启用帮忙专家" });
       if (!session.coachEnabled) return sendJson(response, 409, { error: "请先开启找人帮忙" });
       const existing = database.getMessage(sessionId, requestId, "coach");
       if (existing) {
@@ -1001,6 +1396,32 @@ async function handleApi(request, response, pathname) {
       return sendJson(response, 200, { message, endpoint: buildEndpoint(testConfig.imageBaseUrl || testConfig.baseUrl, "/images/generations") });
     } catch (error) {
       logModelError("图片测试", error, { endpoint: buildEndpoint(testConfig.imageBaseUrl || testConfig.baseUrl, "/images/generations"), model: testConfig.imageModel });
+      return sendJson(response, 502, { error: error.message });
+    }
+  }
+  if (pathname === "/api/admin/test/transcription" && request.method === "POST") {
+    if (!isAdmin(request, config)) return sendJson(response, 401, { error: "后台访问码不正确" });
+    const testConfig = mergeConfig(config, await getBody(request));
+    const error = validateTranscriptionConfig(testConfig);
+    if (error) return sendJson(response, 400, { error });
+    try {
+      await callTranscription(testConfig, silentWav(), "audio/wav", { allowEmpty: true });
+      return sendJson(response, 200, { message: "语音识别接口可访问并接受音频", endpoint: transcriptionEndpoint(testConfig) });
+    } catch (error) {
+      logModelError("语音识别测试", error, { endpoint: transcriptionEndpoint(testConfig), model: testConfig.transcriptionModel, mode: testConfig.transcriptionMode });
+      return sendJson(response, 502, { error: error.message });
+    }
+  }
+  if (pathname === "/api/admin/test/speech" && request.method === "POST") {
+    if (!isAdmin(request, config)) return sendJson(response, 401, { error: "后台访问码不正确" });
+    const testConfig = mergeConfig(config, await getBody(request));
+    const error = validateSpeechConfig(testConfig);
+    if (error) return sendJson(response, 400, { error });
+    try {
+      const audio = await callSpeech(testConfig, "语音合成连接正常。");
+      return sendJson(response, 200, { message: `语音合成正常，收到 ${audio.buffer.length} 字节音频`, endpoint: speechEndpoint(testConfig) });
+    } catch (error) {
+      logModelError("语音合成测试", error, { endpoint: speechEndpoint(testConfig), model: testConfig.speechModel, voice: testConfig.speechVoice, mode: testConfig.speechMode });
       return sendJson(response, 502, { error: error.message });
     }
   }
