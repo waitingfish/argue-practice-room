@@ -1,0 +1,12 @@
+.DS_Store
+node_modules/
+npm-debug.log*
+
+# Runtime data may contain API keys, local sessions, generated jobs, and SQLite files.
+data/
+
+# User-created scenes may contain private prompts or generated personal scenarios.
+scene-configs/generated/
+
+# Local temporary output.
+*.log

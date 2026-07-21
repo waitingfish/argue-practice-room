@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>吵架练习室</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="scene-page" data-phase="intro">
+      <section class="route-intro">
+        <a class="back-button" href="/">返回</a>
+        <div class="intro-copy"><p id="introOne"></p><p id="introTwo"></p><p id="introThree"></p></div>
+        <button class="continue-button" id="continueScene">继续</button>
+      </section>
+
+      <section class="route-arena">
+        <div class="arena-art" aria-hidden="true"></div>
+        <a class="back-button light" href="/">退出</a>
+        <div class="arena-copy">
+          <p class="scene-kicker" id="sceneKicker"></p>
+          <h1 id="arenaTitle"></h1>
+          <p id="arenaIntro"></p>
+        </div>
+        <section class="conversation" id="conversation" aria-live="polite"></section>
+        <form class="speak-box" id="replyForm">
+          <div class="speak-head">
+            <label for="replyInput">现在，开口</label>
+            <div class="agent-actions">
+              <button class="review-trigger" id="reviewButton" type="button" disabled title="完成两轮表达后可复盘">结束并复盘</button>
+              <button class="coach-toggle" id="coachToggle" type="button" aria-pressed="false">找人帮忙</button>
+            </div>
+          </div>
+          <div class="speak-row">
+            <textarea id="replyInput" rows="1" placeholder="写下你真正想说的话"></textarea>
+            <button id="submitButton" type="submit">说</button>
+          </div>
+          <p id="modelState"></p>
+        </form>
+      </section>
+
+      <section class="route-review">
+        <header class="review-header">
+          <button class="review-back" id="returnPractice" type="button">继续练习</button>
+          <p>复盘分析师</p>
+          <h1>你不是来证明谁赢。<br />你是来看清自己怎么说。</h1>
+        </header>
+        <div class="analysis-loading" id="analysisLoading" aria-live="polite">
+          <span></span>
+          <p>正在把这场对话重新看一遍…</p>
+        </div>
+        <div class="analysis-report" id="analysisReport" hidden>
+          <section class="report-lead">
+            <p class="report-model" id="reportModel"></p>
+            <h2>这场对话发生了什么</h2>
+            <p id="reportOverview"></p>
+            <blockquote id="reportTurningPoint"></blockquote>
+          </section>
+          <section class="score-section">
+            <h2>表达状态</h2>
+            <div class="score-grid" id="scoreGrid"></div>
+          </section>
+          <section class="personality-section">
+            <div class="section-heading"><p>只谈这一次练习</p><h2>你的沟通倾向</h2></div>
+            <p class="personality-summary" id="personalitySummary"></p>
+            <div class="trait-list" id="traitList"></div>
+          </section>
+          <section class="report-columns">
+            <div><h2>你已经做对的</h2><ul id="strengthList"></ul></div>
+            <div><h2>容易卡住的地方</h2><ul id="riskList"></ul></div>
+            <div><h2>下一次可以练</h2><ul id="nextStepList"></ul></div>
+          </section>
+          <section class="suggested-section">
+            <p>换一种说法</p>
+            <blockquote id="suggestedReply"></blockquote>
+          </section>
+          <footer class="report-footer">
+            <p id="reportDisclaimer"></p>
+            <button id="restartPractice" type="button">重新练一次</button>
+          </footer>
+        </div>
+      </section>
+    </main>
+    <script src="/scene.js"></script>
+  </body>
+</html>

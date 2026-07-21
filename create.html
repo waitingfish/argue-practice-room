@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>造一场架</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="create-page">
+      <a class="back-button" href="/">返回</a>
+      <form id="createForm" class="create-form">
+        <h1>你想吵的那个人，那件事。<br />说出来。</h1>
+        <textarea id="scenarioInput" required placeholder="比如：我室友总是不洗碗，脏碗在水池堆了一个星期，都发臭了……"></textarea>
+        <p>TA 开口，是——</p>
+        <div class="voice-options">
+          <label><input type="radio" name="voice" value="男声" />男声</label>
+          <label><input type="radio" name="voice" value="女声" />女声</label>
+          <label><input type="radio" name="voice" value="无所谓" checked />无所谓</label>
+        </div>
+        <button type="submit" id="createButton">把 TA 叫出来</button>
+        <section class="generation-progress" id="generationProgress" hidden aria-live="polite">
+          <div class="progress-track" aria-hidden="true"><span id="progressBar"></span></div>
+          <p id="createStatus">任务准备中</p>
+          <small id="jobReference"></small>
+        </section>
+        <p class="create-note" id="createNote">文案与场景图全部完成后，场景才会发布。</p>
+      </form>
+    </main>
+    <script src="/create.js"></script>
+  </body>
+</html>

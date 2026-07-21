@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>吵架练习室</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="experience" data-scene="restaurant" data-view="lobby">
+      <section class="view lobby" aria-label="选择练习场景">
+        <div class="lobby-backdrop" aria-hidden="true"></div>
+        <header class="quiet-header">
+          <span>ARGUMENT REHEARSAL</span>
+          <a href="./admin.html">后台配置</a>
+        </header>
+
+        <div class="scene-gallery">
+          <a class="hero-scene left-scene" href="/scene/restaurant">
+            <img src="./assets/restaurant-characters.png" alt="餐厅里飘来的烟雾" />
+            <span>餐厅。邻座刚点起一根烟。</span>
+          </a>
+          <a class="hero-scene right-scene" href="/scene/family">
+            <img src="./assets/family-characters.png" alt="家里的边界对话" />
+            <span>家里。有句话，你一直没说。</span>
+          </a>
+        </div>
+
+        <div class="lobby-bottom">
+          <p class="overline">你造过的</p>
+          <p class="device-note">这扇门只记在这台设备上。进门后，把地址栏的链接存一份，换了设备，凭它照样推开。</p>
+          <nav class="scene-picks" id="localScenePicks" aria-label="你造过的场景">
+            <a href="/scene/family"><img src="./assets/family-characters.png" alt="" /><span>家里那句没说出口的话</span></a>
+            <a class="selected" href="/scene/restaurant"><img src="./assets/restaurant-characters.png" alt="" /><span>臭烟子风波</span></a>
+            <a href="/scene/night"><img src="./assets/night-characters.png" alt="" /><span>深夜对峙</span></a>
+          </nav>
+          <a class="entry-question" href="/create">……还有谁，是你一直没吵赢的？</a>
+          <p class="entry-hint">一句话，造一场只属于你的架</p>
+        </div>
+      </section>
+
+      <section class="view intro" aria-live="polite">
+        <button class="back-button" data-back type="button" aria-label="返回场景选择">返回</button>
+        <div class="intro-copy">
+          <p id="introLineOne"></p>
+          <p id="introLineTwo"></p>
+          <p id="introLineThree"></p>
+        </div>
+        <button class="continue-button" id="continueScene" type="button">继续</button>
+      </section>
+
+      <section class="view arena" aria-label="对话练习">
+        <div class="arena-art" aria-hidden="true"></div>
+        <button class="back-button light" data-back type="button" aria-label="返回场景选择">退出</button>
+        <div class="arena-copy">
+          <p class="scene-kicker" id="sceneKicker"></p>
+          <h1 id="arenaTitle"></h1>
+          <p id="arenaIntro"></p>
+        </div>
+
+        <section class="conversation" id="conversation" aria-live="polite">
+          <article class="line opponent-line"><span>对方</span><p id="opponentLine"></p></article>
+        </section>
+
+        <form class="speak-box" id="replyForm">
+          <label for="replyInput">现在，开口</label>
+          <div class="speak-row">
+            <textarea id="replyInput" rows="1" placeholder="写下你真正想说的话"></textarea>
+            <button id="submitButton" type="submit">说</button>
+          </div>
+          <p id="modelState" role="status"></p>
+        </form>
+      </section>
+    </main>
+    <script src="/lobby.js"></script>
+  </body>
+</html>

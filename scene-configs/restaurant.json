@@ -1,0 +1,18 @@
+{
+  "id": "restaurant",
+  "source": "built-in",
+  "title": "烟味飘了过来，他满不在乎。",
+  "kicker": "周六下午，餐厅。烟味飘了过来。",
+  "intro": "邻座的人戴着耳机刷手机，手边的烟灰缸里已经有三四个烟头。",
+  "introLines": [
+    "周六下午，餐厅。烟味飘了过来。",
+    "邻座的人戴着耳机刷手机。",
+    "手边的烟灰缸里，已经有三四个烟头。"
+  ],
+  "opponent": "就抽一根，至于这么大反应吗？你管得也太宽了吧。",
+  "opponentPrompt": "你是餐厅里被提醒不要抽烟的邻座客人。你会用不耐烦、轻描淡写和反问来推开责任，但不要升级到暴力威胁。",
+  "coachPrompt": "重点帮助用户表达公共空间边界和具体请求。建议用户减少道德审判，直接要求对方停止或请店员介入。",
+  "analysisPrompt": "重点观察用户在公共冲突中能否区分事实、规则和情绪，是否提出可执行请求，以及面对反问时是否保持表达清晰；所有倾向必须引用用户原话。",
+  "art": "assets/restaurant-characters.png",
+  "artPrompt": "Original charcoal and ink hand-drawn collage illustration, wide 16:9, smoky restaurant argument between neighboring tables, no text, no logo, no watermark."
+}
