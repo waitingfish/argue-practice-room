@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>对话回放 · 吵架练习室</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="replay-page" id="replayPage">
+      <div class="replay-backdrop" aria-hidden="true"></div>
+      <header class="replay-header">
+        <a href="/">回到首页</a>
+        <button id="shareReplay" type="button">分享</button>
+      </header>
+      <section class="replay-title">
+        <p id="replayKicker">对话回放</p>
+        <h1 id="replayTitle">正在打开这场对话…</h1>
+        <p id="replayOutcome"></p>
+      </section>
+      <section class="replay-stage" aria-live="polite">
+        <div class="replay-timeline" id="replayTimeline"></div>
+      </section>
+      <footer class="replay-controls">
+        <button class="replay-play" id="replayPlay" type="button" disabled>开始回放</button>
+        <label for="replaySpeed">速度</label>
+        <select id="replaySpeed">
+          <option value="0.75">0.75×</option>
+          <option value="1" selected>1×</option>
+          <option value="1.25">1.25×</option>
+          <option value="1.5">1.5×</option>
+        </select>
+        <span id="replayProgress">0 / 0</span>
+      </footer>
+    </main>
+    <script src="/replay.js"></script>
+  </body>
+</html>

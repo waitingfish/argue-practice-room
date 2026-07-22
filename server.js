@@ -11,6 +11,9 @@ const configPath = path.join(dataDir, "config.json");
 const sceneConfigDir = path.join(root, "scene-configs");
 const publishedScenesDir = path.join(sceneConfigDir, "generated");
 const stagingDir = path.join(dataDir, "staging");
+const sessionAudioDir = path.join(dataDir, "session-audio");
+const replayDir = path.join(dataDir, "replays");
+const replayStagingDir = path.join(dataDir, "replay-staging");
 const database = createDatabase(path.join(dataDir, "app.db"));
 const host = process.env.HOST || "127.0.0.1";
 const port = Number(process.env.PORT || 4173);
@@ -22,11 +25,13 @@ let processingJobs = false;
 
 const defaultPrompt = `目标是帮助用户坚定、清晰、不过度攻击地表达边界。不要羞辱、操纵或鼓励报复；遇到威胁、暴力或自伤风险时，停止角色扮演，建议立即联系可信任的人或当地紧急服务。全程用简体中文。`;
 
-const opponentRolePrompt = `你是当前冲突场景里的“争吵方”，不是教练。你只回应用户刚说的话，保持场景里的立场、情绪和压力，但不要输出“教练：”、建议、评分、复盘或旁白。每次回复 1 到 3 句，像真实对话一样继续推进冲突。不要生成歧视、威胁、骚扰、煽动现实报复或人身伤害内容。严格按两段输出：第一行以“VOICE_STYLE:”开头，用不超过80字描述这句话的情绪、语调、语速、停顿、重音和节奏，只写表演方式；第二行以“REPLY:”开头，写真正对用户说的台词。`;
+const opponentRolePrompt = `你是当前冲突场景里的“争吵方”，不是教练、裁判、旁白或用户。你的身份、立场、行为事实必须始终等同于场景专属提示和对方开场；即使用户辱骂、夸奖、说“不错/可以/行”，也只能理解为对场景中你的角色说的话，不能把它理解成对 AI 练习的评价。不得和用户交换身份，不得替用户说理，不得站到用户一边指责自己。你只回应用户刚说的话，保持场景里的立场、情绪和压力，但不要输出“教练：”、建议、评分、复盘、括号旁白、心理分析或语音表演说明。每次回复 1 到 3 句，像真实对话一样继续推进冲突。不要生成歧视、威胁、骚扰、煽动现实报复或人身伤害内容。直接输出真正对用户说的台词。`;
 
 const coachRolePrompt = `你是“吵架练习室”里的 AI 教练，不是争吵方。你只站在用户身边给下一步建议，不替对方说话，不继续角色扮演。请用简体中文输出：1 句判断、1 句下一步策略、1 句用户可以直接说出口的话。总长度不超过 120 字。不要羞辱、操纵或鼓励报复。`;
 
 const analystRolePrompt = `你是“吵架练习室”的复盘分析师，不是争吵方，也不是实时教练。你只分析已经发生的对话，不继续角色扮演。重点观察用户如何表达事实、感受、请求和边界，以及面对压力时的沟通变化。性格部分只能描述“本次对话显示的沟通倾向”，每个倾向必须引用用户说过的话作为证据，并说明样本有限；禁止心理诊断、人格定型、道德评判或推断现实身份。返回严格 JSON，不要 markdown：{"overview":"过程概览","turningPoint":"关键转折","scores":{"clarity":0,"boundary":0,"emotionalControl":0,"listening":0},"personality":{"summary":"谨慎总结","traits":[{"name":"倾向名","evidence":"逐字复制用户发言中的一段连续原文，不加前缀，不改写","caveat":"限制说明"}]},"strengths":["优势"],"risks":["风险"],"nextSteps":["练习建议"],"suggestedReply":"一条更好的表达","disclaimer":"本报告只基于本次练习，不是心理诊断。"}。四项分数为 0 到 100 的整数；traits 2 到 4 条，其余数组 2 到 4 条。`;
+
+const refereeRolePrompt = `你是“吵架练习室”的裁判智能体，不是争吵方、教练或复盘分析师。你在沉浸模式每完成一轮后判断场景目标是否真正达成。只有对方明确让步、接受用户边界、承诺具体行动，或冲突形成符合本场景胜利条件的可执行收束时，才能判定 won；用户辱骂、音量更大、单方面宣布胜利、对方暂时沉默或敷衍都不算赢。你还要基于用户本轮和本会话的措辞，谨慎估计吵完后的即时心理状态；这是情绪推测，不是心理诊断。返回严格 JSON，不要 markdown：{"status":"ongoing或won","confidence":0,"achievement":"本轮成果，不超过60字","reason":"判定依据，不超过100字","mood":{"label":"例如痛快、松了一口气、赢了却仍不开心、兴奋、疲惫或憋屈","valence":0,"arousal":0,"confidence":0},"resultCopy":"仅在won时填写一段40到100字、第二人称、有画面感但克制的成果文案；ongoing时为空字符串"}。confidence、mood.valence、mood.arousal、mood.confidence 均为整数；valence 范围 -100 到 100，其余范围 0 到 100。`;
 
 const finalAnswerOnlyPrompt = `不要输出思考过程、推理过程、analysis、reasoning、草稿、解释计划或 <think> 标签；只输出用户应该看到的最终内容。`;
 
@@ -51,9 +56,7 @@ function defaultConfig() {
     speechModel: "gpt-4o-mini-tts",
     speechApiKey: "",
     speechVoice: "alloy",
-    speechInstruction: "用自然、清晰、有情绪但不过度夸张的中文语气说话。",
     speechFormat: "mp3",
-    speechSpeed: 1,
     speechTimeoutSeconds: 120,
     adminPassword: process.env.ADMIN_PASSWORD || "admin"
   };
@@ -64,7 +67,9 @@ function readConfig() {
     fs.mkdirSync(dataDir, { recursive: true });
     fs.writeFileSync(configPath, JSON.stringify(defaultConfig(), null, 2), { mode: 0o600 });
   }
-  return { ...defaultConfig(), ...JSON.parse(fs.readFileSync(configPath, "utf8")) };
+  const defaults = defaultConfig();
+  const stored = JSON.parse(fs.readFileSync(configPath, "utf8"));
+  return Object.fromEntries(Object.keys(defaults).map((key) => [key, stored[key] ?? defaults[key]]));
 }
 
 function writeConfig(config) {
@@ -205,9 +210,9 @@ function publicConfig(config) {
     transcriptionModel: config.transcriptionModel, transcriptionTimeoutSeconds: config.transcriptionTimeoutSeconds,
     hasTranscriptionApiKey: Boolean(config.transcriptionApiKey || (config.transcriptionMode === "mimo" && config.apiKey)),
     speechMode: config.speechMode, speechBaseUrl: config.speechBaseUrl,
-    speechModel: config.speechModel, speechVoice: config.speechVoice, speechInstruction: config.speechInstruction,
+    speechModel: config.speechModel, speechVoice: config.speechVoice,
     speechFormat: config.speechFormat,
-    speechSpeed: config.speechSpeed, speechTimeoutSeconds: config.speechTimeoutSeconds,
+    speechTimeoutSeconds: config.speechTimeoutSeconds,
     hasSpeechApiKey: Boolean(config.speechApiKey || config.apiKey)
   };
 }
@@ -236,9 +241,15 @@ function effectiveSafetyPrompt(config) {
 }
 
 function rolePrompt(config, role) {
-  const base = role === "coach" ? coachRolePrompt : role === "analyst" ? analystRolePrompt : opponentRolePrompt;
-  const scenePrompt = role === "coach" ? config.sceneCoachPrompt : role === "analyst" ? config.sceneAnalysisPrompt : config.sceneOpponentPrompt;
+  const base = role === "coach" ? coachRolePrompt : role === "analyst" ? analystRolePrompt : role === "referee" ? refereeRolePrompt : opponentRolePrompt;
+  const scenePrompt = role === "coach" ? config.sceneCoachPrompt : role === "analyst" ? config.sceneAnalysisPrompt : role === "referee" ? config.sceneRefereePrompt : config.sceneOpponentPrompt;
   return `${base}\n\n${finalAnswerOnlyPrompt}\n\n场景专属提示：${scenePrompt || ""}\n\n补充原则：${effectiveSafetyPrompt(config)}`;
+}
+
+function modelTemperature(config, role) {
+  const value = Number(config.temperature);
+  if (role === "opponent") return Math.min(Number.isFinite(value) ? value : 0.7, 0.45);
+  return value;
 }
 
 function sceneForRole(scene, role) {
@@ -247,6 +258,7 @@ function sceneForRole(scene, role) {
     sceneOpponentPrompt: scene.opponentPrompt || "",
     sceneCoachPrompt: scene.coachPrompt || "",
     sceneAnalysisPrompt: scene.analysisPrompt || "",
+    sceneRefereePrompt: `${scene.refereePrompt || ""}\n胜利条件：${scene.winCondition || "对方明确接受用户提出的合理边界或行动请求。"}`,
     _role: role
   };
 }
@@ -275,9 +287,7 @@ function mergeConfig(config, update = {}) {
     speechModel: String(update.speechModel || config.speechModel || "gpt-4o-mini-tts").trim(),
     speechApiKey: update.speechApiKey ? String(update.speechApiKey).trim() : config.speechApiKey,
     speechVoice: String(update.speechVoice || config.speechVoice || "alloy").trim(),
-    speechInstruction: String(update.speechInstruction || config.speechInstruction || "用自然、清晰的中文语气说话。").trim().slice(0, 1000),
     speechFormat: ["mp3", "opus", "aac", "flac", "wav", "pcm"].includes(update.speechFormat) ? update.speechFormat : (config.speechFormat || "mp3"),
-    speechSpeed: Math.max(0.25, Math.min(4, Number(update.speechSpeed ?? config.speechSpeed ?? 1))),
     speechTimeoutSeconds: Math.max(15, Math.min(300, Number(update.speechTimeoutSeconds ?? config.speechTimeoutSeconds ?? 120))),
     adminPassword: update.newAdminPassword ? String(update.newAdminPassword) : config.adminPassword
   };
@@ -408,53 +418,32 @@ function createThinkingFilter(onChunk) {
   };
 }
 
-function parseOpponentOutput(content, fallbackStyle = "") {
-  const value = String(content || "").trim();
-  const match = value.match(/^VOICE_STYLE:\s*([^\n]*)\nREPLY:\s*([\s\S]*)$/i);
-  if (!match) return { text: value.replace(/^REPLY:\s*/i, "").trim(), speechStyle: fallbackStyle };
-  return { text: match[2].trim(), speechStyle: match[1].trim().slice(0, 1000) || fallbackStyle };
-}
-
-function createOpponentOutputFilter(onChunk, fallbackStyle = "") {
-  let buffer = "";
-  let text = "";
-  let speechStyle = fallbackStyle;
-  let replyStarted = false;
-  return {
-    push(chunk) {
-      if (replyStarted) {
-        text += chunk;
-        onChunk(chunk);
-        return;
-      }
-      buffer += String(chunk || "");
-      const marker = buffer.match(/\nREPLY:\s*/i);
-      if (!marker) return;
-      const prefix = buffer.slice(0, marker.index);
-      speechStyle = prefix.trim().replace(/^VOICE_STYLE:\s*/i, "").trim().slice(0, 1000) || fallbackStyle;
-      const visible = buffer.slice(marker.index + marker[0].length);
-      buffer = "";
-      replyStarted = true;
-      if (visible) { text += visible; onChunk(visible); }
-    },
-    finish() {
-      if (!replyStarted) {
-        const parsed = parseOpponentOutput(buffer, fallbackStyle);
-        text = parsed.text;
-        speechStyle = parsed.speechStyle;
-        if (text) onChunk(text);
-      }
-      return { text: text.trim(), speechStyle };
-    }
-  };
-}
-
 function sanitizeMessages(messages) {
   if (!Array.isArray(messages)) return [];
   return messages.slice(-10).map((message) => ({
     role: ["assistant", "user"].includes(message.role) ? message.role : "user",
     content: String(message.content || "").slice(0, 1600)
   })).filter((message) => message.content.trim());
+}
+
+function validateOpponentReply(scene, content) {
+  const text = String(content || "");
+  if (scene.id === "restaurant" && /(?:公共场合|餐厅|这里|这儿)[^。！？\n]*(?:抽烟|吸烟)[^。！？\n]*(?:你不对|你还有理|还有理|不对|违法|违规)|你[^。！？\n]*(?:抽烟|吸烟)[^。！？\n]*(?:有理|不对|违法|违规)/.test(text)) {
+    throw new Error("争吵方回复发生角色反转");
+  }
+  if (/用户似乎|这一轮练习|可以结束|作为AI|复盘|评分/.test(text) || /^[（(]/.test(text.trim())) {
+    throw new Error("争吵方回复包含旁白或练习元信息");
+  }
+}
+
+function opponentRewriteMessages(messages, badReply, reason) {
+  return [
+    ...messages,
+    {
+      role: "user",
+      content: `上一次争吵方回复不合格，原因：${reason}。\n不合格回复：${String(badReply || "").slice(0, 500)}\n请重新输出争吵方台词：保持固定身份和场景事实，不要旁白，不要解释，不要和用户交换立场。`
+    }
+  ];
 }
 
 function coachMessages(messages) {
@@ -477,6 +466,38 @@ function analysisMessages(messages, coachHistory = []) {
   const transcript = analysisTranscript(messages).map((message) => `${message.role === "assistant" ? "争吵方" : "用户"}：${message.content}`).join("\n");
   const coaching = Array.isArray(coachHistory) ? coachHistory.slice(-8).map((item) => `帮忙专家：${String(item || "").slice(0, 1200)}`).join("\n") : "";
   return [{ role: "user", content: `请复盘下面这次练习。性格倾向只能从“用户”发言取证；专家建议只用于判断用户是否借助过提示，不可当作用户自己的表达。\n\n对话记录：\n${transcript}${coaching ? `\n\n练习中出现过的专家建议：\n${coaching}` : ""}` }];
+}
+
+function refereeMessages(messages) {
+  const transcript = analysisTranscript(messages).map((message) => `${message.role === "assistant" ? "争吵方" : "用户"}：${message.content}`).join("\n");
+  const latest = analysisTranscript(messages).slice(-2).map((message) => `${message.role === "assistant" ? "争吵方" : "用户"}：${message.content}`).join("\n");
+  return [{ role: "user", content: `请只判断新增的最后一轮是否让整场争吵达到胜利条件。不得引用其他会话。\n\n当前会话完整记录：\n${transcript}\n\n本轮新增内容：\n${latest}` }];
+}
+
+function parseVerdict(content) {
+  const result = JSON.parse(extractJsonObject(content));
+  const status = result.status === "won" ? "won" : "ongoing";
+  const clamp = (value, min = 0, max = 100) => Math.max(min, Math.min(max, Math.round(Number(value) || 0)));
+  const verdict = {
+    status,
+    confidence: clamp(result.confidence),
+    achievement: String(result.achievement || "这一轮还没有形成明确收束。").slice(0, 160),
+    reason: String(result.reason || "对方还没有明确接受边界或行动请求。").slice(0, 240),
+    mood: {
+      label: String(result.mood?.label || "仍在较劲").slice(0, 60),
+      valence: clamp(result.mood?.valence, -100, 100),
+      arousal: clamp(result.mood?.arousal),
+      confidence: clamp(result.mood?.confidence)
+    },
+    resultCopy: status === "won" ? String(result.resultCopy || "这场争吵终于有了结果。你把真正想守住的东西说清楚了，也让对方给出了回应。").slice(0, 300) : ""
+  };
+  if (status === "won" && verdict.confidence < 50) throw new Error("裁判模型的胜利判定置信度不足");
+  return verdict;
+}
+
+async function judgeConversation(config, scene, messages) {
+  const content = await callModel(config, scene, refereeMessages(messages), "referee");
+  return parseVerdict(content);
 }
 
 function parseAnalysis(content) {
@@ -618,11 +639,11 @@ async function callModel(config, scene, messages, role = "opponent") {
   const response = await fetch(endpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${config.apiKey}` },
-    body: JSON.stringify({
+    body: JSON.stringify(chatCompletionBody(config, {
       model: config.model,
-      temperature: Number(config.temperature),
+      temperature: modelTemperature(config, role),
       messages: [{ role: "system", content: `${rolePrompt({ ...config, ...sceneForRole(scene, role) }, role)}\n\n${context}` }, ...messages]
-    }),
+    }, role)),
     signal: AbortSignal.timeout(30000)
   });
   const data = await response.json().catch(() => ({}));
@@ -638,12 +659,12 @@ async function streamModel(config, scene, messages, onChunk, signal, role = "opp
   const response = await fetch(endpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${config.apiKey}` },
-    body: JSON.stringify({
+    body: JSON.stringify(chatCompletionBody(config, {
       model: config.model,
-      temperature: Number(config.temperature),
+      temperature: modelTemperature(config, role),
       stream: true,
       messages: [{ role: "system", content: `${rolePrompt({ ...config, ...sceneForRole(scene, role) }, role)}\n\n${context}` }, ...messages]
-    }),
+    }, role)),
     signal
   });
   if (!response.ok) {
@@ -654,16 +675,14 @@ async function streamModel(config, scene, messages, onChunk, signal, role = "opp
     const data = await response.json();
     const content = readChatContent(data);
     if (role === "opponent") {
-      const result = parseOpponentOutput(content, scene.openingSpeechStyle || scene.voiceProfile || "");
-      if (result.text) onChunk(result.text);
-      return result;
+      if (content) onChunk(content);
+      return content;
     }
     if (content) onChunk(content);
-    return { text: content, speechStyle: "" };
+    return content;
   }
 
-  const opponentOutput = role === "opponent" ? createOpponentOutputFilter(onChunk, scene.openingSpeechStyle || scene.voiceProfile || "") : null;
-  const emitVisibleChunk = createThinkingFilter(opponentOutput ? (chunk) => opponentOutput.push(chunk) : onChunk);
+  const emitVisibleChunk = createThinkingFilter(onChunk);
   const decoder = new TextDecoder();
   let buffer = "";
   for await (const chunk of response.body) {
@@ -677,7 +696,7 @@ async function streamModel(config, scene, messages, onChunk, signal, role = "opp
       const payload = trimmed.slice(5).trim();
       if (payload === "[DONE]") {
         emitVisibleChunk("", true);
-        return opponentOutput ? opponentOutput.finish() : { text: "", speechStyle: "" };
+        return "";
       }
       try {
         const text = readDeltaContent(JSON.parse(payload));
@@ -688,7 +707,7 @@ async function streamModel(config, scene, messages, onChunk, signal, role = "opp
     }
   }
   emitVisibleChunk("", true);
-  return opponentOutput ? opponentOutput.finish() : { text: "", speechStyle: "" };
+  return "";
 }
 
 function parseScene(content) {
@@ -702,31 +721,25 @@ function parseScene(content) {
     opponentPrompt: String(result.opponentPrompt || "").slice(0, 1000),
     coachPrompt: String(result.coachPrompt || "").slice(0, 1000),
     analysisPrompt: String(result.analysisPrompt || "重点分析用户如何表达边界、请求和情绪，并结合原话说明沟通倾向。").slice(0, 1000),
+    winCondition: String(result.winCondition || "对方明确接受用户提出的合理边界或行动请求。").slice(0, 1000),
+    refereePrompt: String(result.refereePrompt || "重点确认对方是否明确让步，以及用户是否得到可执行的结果；不要把辱骂或压制判为胜利。").slice(0, 1000),
     opponentGender: String(result.opponentGender || "unspecified"),
-    ttsVoice: String(result.ttsVoice || ""),
-    voiceProfile: String(result.voiceProfile || "").slice(0, 1000),
-    openingSpeechStyle: String(result.openingSpeechStyle || "").slice(0, 1000),
     artPrompt: String(result.artPrompt || "charcoal and ink narrative scene").slice(0, 1200)
   });
 }
 
 function normalizeSceneVoice(scene) {
   const gender = scene.opponentGender === "female" ? "female" : scene.opponentGender === "male" ? "male" : "unspecified";
-  const allowed = gender === "female" ? ["冰糖", "茉莉"] : gender === "male" ? ["苏打", "白桦"] : ["冰糖", "茉莉", "苏打", "白桦"];
-  const defaultVoice = gender === "male" ? "苏打" : "冰糖";
   return {
     ...scene,
-    opponentGender: gender,
-    ttsVoice: allowed.includes(scene.ttsVoice) ? scene.ttsVoice : defaultVoice,
-    voiceProfile: String(scene.voiceProfile || `${gender === "male" ? "男性" : "女性"}中文声音，符合当前角色身份与年龄。`).slice(0, 1000),
-    openingSpeechStyle: String(scene.openingSpeechStyle || "带着克制的不耐烦，语速中等，反问处稍加重音，停顿自然。").slice(0, 1000)
+    opponentGender: gender
   };
 }
 
 async function createSceneText(config, prompt, voice) {
   const response = await fetch(buildEndpoint(config.baseUrl, "/chat/completions"), {
     method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${config.apiKey}` },
-    body: JSON.stringify({ model: config.model, temperature: 0.85, messages: [{ role: "system", content: "你是互动叙事场景编剧。可以在内部进行必要推理，但最终回复只能包含一个严格 JSON 对象，不要 markdown，不要解释，不要把思考过程写进结果：{title,kicker,intro,introLines:[三句中文],opponent,opponentPrompt,coachPrompt,analysisPrompt,opponentGender,ttsVoice,voiceProfile,openingSpeechStyle,artPrompt}。文案简体中文，克制、具体、非暴力；opponent 是对方的第一句；opponentGender 只能是 male 或 female，并遵循用户声音偏好；女性 ttsVoice 只能选冰糖或茉莉，男性只能选苏打或白桦；voiceProfile 描述角色年龄、声音质感和说话习惯；openingSpeechStyle 描述第一句的情绪、语调、语速、停顿、重音和节奏；opponentPrompt 描述争吵方的人设、说话方式和施压方式；coachPrompt 描述实时帮忙专家应该重点教什么；analysisPrompt 描述复盘分析师在这个场景中要重点观察的表达模式，不能做心理诊断；artPrompt 用英文，描述原创的 charcoal and ink hand-drawn collage illustration, wide 16:9, two people in conflict, no text, no logo, no watermark。" }, { role: "user", content: `用户描述：${prompt}\n对方声音偏好：${voice}` }] }), signal: AbortSignal.timeout(30000)
+    body: JSON.stringify({ model: config.model, temperature: 0.85, messages: [{ role: "system", content: "你是互动叙事场景编剧。可以在内部进行必要推理，但最终回复只能包含一个严格 JSON 对象，不要 markdown，不要解释，不要把思考过程写进结果：{title,kicker,intro,introLines:[三句中文],opponent,opponentPrompt,coachPrompt,analysisPrompt,winCondition,refereePrompt,opponentGender,artPrompt}。文案简体中文，克制、具体、非暴力；opponent 是对方的第一句；opponentGender 只能是 male 或 female，并遵循用户声音偏好；opponentPrompt 描述争吵方的人设、说话方式和施压方式；coachPrompt 描述实时帮忙专家应该重点教什么；analysisPrompt 描述复盘分析师在这个场景中要重点观察的表达模式，不能做心理诊断；winCondition 描述必须由对方言行可观察确认的场景胜利条件，不能把辱骂或压制当胜利；refereePrompt 描述裁判在本场景应重点检查的让步、边界或行动承诺；artPrompt 用英文，描述原创的 charcoal and ink hand-drawn collage illustration, wide 16:9, two people in conflict, no text, no logo, no watermark。" }, { role: "user", content: `用户描述：${prompt}\n对方声音偏好：${voice}` }] }), signal: AbortSignal.timeout(30000)
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data.error?.message || `文案模型返回 ${response.status}`);
@@ -785,7 +798,7 @@ async function createSceneImage(config, artPrompt) {
 }
 
 function validateSceneDefinition(scene) {
-  const requiredStrings = ["title", "kicker", "intro", "opponent", "opponentPrompt", "coachPrompt", "analysisPrompt", "opponentGender", "ttsVoice", "voiceProfile", "openingSpeechStyle", "artPrompt", "art"];
+  const requiredStrings = ["title", "kicker", "intro", "opponent", "opponentPrompt", "coachPrompt", "analysisPrompt", "winCondition", "refereePrompt", "opponentGender", "artPrompt", "art"];
   for (const key of requiredStrings) {
     if (!String(scene[key] || "").trim()) throw new Error(`场景配置缺少字段：${key}`);
   }
@@ -978,21 +991,41 @@ function speechEndpoint(config) {
   return buildEndpoint(config.speechBaseUrl, config.speechMode === "mimo" ? "/chat/completions" : "/audio/speech");
 }
 
-async function callSpeech(config, input, options = {}) {
+function isMimoChatConfig(config) {
+  const value = `${config.baseUrl || ""} ${config.model || ""}`.toLowerCase();
+  return value.includes("mimo") || value.includes("xiaomi");
+}
+
+function chatCompletionBody(config, body, role = "") {
+  const result = { ...body };
+  if (isMimoChatConfig(config) && ["opponent", "coach", "referee"].includes(role)) {
+    result.thinking = { type: "disabled" };
+  }
+  return result;
+}
+
+function mimoSpeechMessages(input) {
+  return [
+    { role: "assistant", content: String(input).slice(0, 4096) }
+  ];
+}
+
+function mimoHeaders(apiKey) {
+  return { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}`, "api-key": apiKey };
+}
+
+async function callSpeech(config, input) {
   const apiKey = config.speechApiKey || config.apiKey;
   if (config.speechMode === "mimo") {
     const endpoint = speechEndpoint(config);
     const format = config.speechFormat || "wav";
     const response = await fetch(endpoint, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+      headers: mimoHeaders(apiKey),
       body: JSON.stringify({
         model: config.speechModel || "mimo-v2.5-tts",
-        messages: [
-          { role: "user", content: [config.speechInstruction, options.voiceProfile, options.speechStyle].filter(Boolean).join("\n") || "用自然、清晰的中文语气说话。" },
-          { role: "assistant", content: String(input).slice(0, 4096) }
-        ],
-        audio: { format, voice: options.voice || config.speechVoice || "mimo_default" }
+        messages: mimoSpeechMessages(input),
+        audio: { format, voice: config.speechVoice || "mimo_default" }
       }),
       signal: AbortSignal.timeout(Number(config.speechTimeoutSeconds || 120) * 1000)
     });
@@ -1012,8 +1045,7 @@ async function callSpeech(config, input, options = {}) {
       model: config.speechModel,
       voice: config.speechVoice,
       input: String(input).slice(0, 4096),
-      response_format: config.speechFormat,
-      speed: Number(config.speechSpeed || 1)
+      response_format: config.speechFormat
     }),
     signal: AbortSignal.timeout(Number(config.speechTimeoutSeconds || 120) * 1000)
   });
@@ -1024,6 +1056,132 @@ async function callSpeech(config, input, options = {}) {
   const buffer = Buffer.from(await response.arrayBuffer());
   if (!buffer.length) throw new Error("语音合成服务返回了空音频");
   return { buffer, contentType: response.headers.get("content-type") || `audio/${config.speechFormat || "mpeg"}` };
+}
+
+function replayPublicData(replay) {
+  return replay ? { id: replay.id, createdAt: replay.createdAt, ...replay.manifest } : null;
+}
+
+function sessionRecordingPath(sessionId, requestId) {
+  return path.join(sessionAudioDir, sessionId, `${requestId}.wav`);
+}
+
+function cleanupSessionFiles(sessionId) {
+  fs.rmSync(path.join(sessionAudioDir, sessionId), { recursive: true, force: true });
+}
+
+function replayPause(messages, index) {
+  if (index >= messages.length - 1) return 0;
+  const current = Date.parse(messages[index].createdAt || "");
+  const next = Date.parse(messages[index + 1].createdAt || "");
+  if (!Number.isFinite(current) || !Number.isFinite(next)) return 700;
+  return Math.max(450, Math.min(2400, next - current));
+}
+
+async function createReplay(config, scene, sessionId) {
+  const existing = database.getReplayBySession(sessionId);
+  if (existing) return existing;
+
+  const messages = database.listArgumentMessages(sessionId);
+  if (!messages.length) throw new Error("这场对话没有可保存的内容");
+  const replayId = `replay-${crypto.randomBytes(12).toString("hex")}`;
+  const stagePath = path.join(replayStagingDir, replayId);
+  const finalPath = path.join(replayDir, replayId);
+  fs.mkdirSync(stagePath, { recursive: true });
+
+  try {
+    const timeline = [];
+    for (let index = 0; index < messages.length; index += 1) {
+      const message = messages[index];
+      const fileName = `${String(index + 1).padStart(3, "0")}-${message.role}.wav`;
+      const destination = path.join(stagePath, fileName);
+      const recording = message.role === "user" ? sessionRecordingPath(sessionId, message.requestId) : "";
+      let audioSource = "generated";
+      if (recording && fs.existsSync(recording)) {
+        fs.copyFileSync(recording, destination);
+        audioSource = "recorded";
+      } else {
+        const audio = await callSpeech({ ...config, speechFormat: "wav" }, message.content);
+        durableWriteFile(destination, audio.buffer);
+      }
+      timeline.push({
+        role: message.role,
+        text: message.content,
+        audioUrl: `/replay-assets/${replayId}/${fileName}`,
+        audioSource,
+        pauseAfterMs: replayPause(messages, index)
+      });
+    }
+
+    const latestVerdict = database.getLatestVerdict(sessionId)?.verdict || {};
+    const manifest = {
+      scene: { id: scene.id, title: scene.title, kicker: scene.kicker, art: scene.art },
+      outcome: { achievement: latestVerdict.achievement || "这场争吵已经结束。", mood: latestVerdict.mood?.label || "" },
+      timeline
+    };
+    atomicWriteJson(path.join(stagePath, "manifest.json"), manifest);
+    fs.mkdirSync(replayDir, { recursive: true });
+    fs.renameSync(stagePath, finalPath);
+    syncDirectory(replayDir);
+    const replay = database.saveReplay(replayId, sessionId, scene.id, manifest);
+    try { cleanupSessionFiles(sessionId); } catch { /* 回放已保存，临时录音可稍后清理。 */ }
+    return replay;
+  } catch (error) {
+    fs.rmSync(stagePath, { recursive: true, force: true });
+    if (!database.getReplay(replayId)) fs.rmSync(finalPath, { recursive: true, force: true });
+    throw error;
+  }
+}
+
+async function streamMimoSpeech(config, input, response) {
+  const apiKey = config.speechApiKey || config.apiKey;
+  if (config.speechMode !== "mimo") throw new Error("当前语音服务不支持流式合成");
+  const endpoint = speechEndpoint(config);
+  const upstream = await fetch(endpoint, {
+    method: "POST",
+    headers: mimoHeaders(apiKey),
+    body: JSON.stringify({
+      model: config.speechModel || "mimo-v2.5-tts",
+      messages: mimoSpeechMessages(input),
+      audio: { format: "pcm16", voice: config.speechVoice || "mimo_default" },
+      stream: true
+    }),
+    signal: AbortSignal.timeout(Number(config.speechTimeoutSeconds || 120) * 1000)
+  });
+  if (!upstream.ok) {
+    const data = await upstream.json().catch(() => ({}));
+    throw new Error(data?.error?.message || data?.error || data?.message || `MiMo 流式语音合成返回 ${upstream.status}`);
+  }
+  response.writeHead(200, { "Content-Type": "application/x-ndjson; charset=utf-8", "Cache-Control": "no-store", "X-Audio-Format": "pcm16", "X-Audio-Sample-Rate": "24000" });
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let chunkCount = 0;
+  for await (const chunk of upstream.body) {
+    buffer += decoder.decode(chunk, { stream: true });
+    const lines = buffer.split(/\r?\n/);
+    buffer = lines.pop() || "";
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith(":") || !trimmed.startsWith("data:")) continue;
+      const payload = trimmed.slice(5).trim();
+      if (payload === "[DONE]") {
+        response.write(JSON.stringify({ done: true, chunks: chunkCount }) + "\n");
+        return response.end();
+      }
+      try {
+        const data = JSON.parse(payload);
+        const audio = data?.choices?.[0]?.delta?.audio?.data;
+        if (audio) {
+          chunkCount += 1;
+          response.write(JSON.stringify({ audio }) + "\n");
+        }
+      } catch {
+        continue;
+      }
+    }
+  }
+  response.write(JSON.stringify({ done: true, chunks: chunkCount }) + "\n");
+  return response.end();
 }
 
 function silentWav(durationMs = 300) {
@@ -1043,7 +1201,7 @@ function sessionToken(request) {
 }
 
 function sessionState(session) {
-  return { ...session, messages: database.listMessages(session.id) };
+  return { ...session, messages: database.listMessages(session.id), latestVerdict: database.getLatestVerdict(session.id) };
 }
 
 function argumentMessagesForModel(sessionId) {
@@ -1103,13 +1261,36 @@ function localSessionReport(messages) {
   };
 }
 
+function localRefereeVerdict(messages) {
+  const userTurns = messages.filter((message) => message.role === "user");
+  const lastOpponent = [...messages].reverse().find((message) => message.role === "assistant")?.content || "";
+  const won = userTurns.length >= 2 && /^(行|好|可以)|知道了|我会|我停|不抽了|答应你|按你说的|是我的问题/.test(lastOpponent);
+  return {
+    status: won ? "won" : "ongoing",
+    confidence: won ? 70 : 58,
+    achievement: won ? "对方已经给出明确让步或行动承诺。" : "你已经表达了立场，但对方还没有给出明确让步。",
+    reason: won ? "对方最新回复包含可观察的接受或承诺。" : "目前仍缺少对方接受边界或承诺行动的证据。",
+    mood: { label: won ? "松了一口气" : "仍在较劲", valence: won ? 45 : -12, arousal: won ? 42 : 62, confidence: 45 },
+    resultCopy: won ? "你把这场争吵推到了一个真实的结果：对方终于给出了回应。赢下来的不只是最后一句，而是那条终于被看见的边界。" : ""
+  };
+}
+
 async function handleApi(request, response, pathname) {
   const config = readConfig();
+  const requestUrl = new URL(request.url, `http://${host}`);
+  const effectiveMethod = requestUrl.searchParams.get("_method") === "DELETE" ? "DELETE" : request.method;
   if (pathname === "/api/status" && request.method === "GET") return sendJson(response, 200, {
     configured: Boolean(config.apiKey), model: config.model,
     transcriptionMode: config.transcriptionMode,
+    speechMode: config.speechMode,
     immersiveConfigured: Boolean((config.speechApiKey || config.apiKey) && config.speechBaseUrl && config.transcriptionBaseUrl)
   });
+  const publicReplayRoute = pathname.match(/^\/api\/replays\/(replay-[a-f0-9]{24})$/);
+  if (publicReplayRoute && request.method === "GET") {
+    const replay = database.getReplay(publicReplayRoute[1]);
+    if (!replay) return sendJson(response, 404, { error: "回放不存在或已被删除" });
+    return sendJson(response, 200, replayPublicData(replay));
+  }
   if ((pathname === "/api/scene-jobs" || pathname === "/api/scenes/generate") && request.method === "POST") {
     const payload = await getBody(request);
     const prompt = String(payload.prompt || "").trim();
@@ -1180,20 +1361,33 @@ async function handleApi(request, response, pathname) {
     const scene = readSceneConfig(String(payload.sceneId || ""));
     if (!scene) return sendJson(response, 404, { error: "场景不存在" });
     const mode = payload.mode === "immersive" ? "immersive" : "training";
-    const created = database.createSession(scene.id, scene.opponent, mode, scene.openingSpeechStyle || scene.voiceProfile || "");
+    const created = database.createSession(scene.id, scene.opponent, mode);
     return sendJson(response, 201, created);
   }
 
-  const sessionRoute = pathname.match(/^\/api\/sessions\/(session-[a-z0-9-]+)(?:\/(messages|coach|analyze|transcriptions|speech))?$/);
+  const sessionRoute = pathname.match(/^\/api\/sessions\/(session-[a-z0-9-]+)(?:\/(messages|coach|judge|analyze|transcriptions|speech|speech-stream|replay))?$/);
   if (sessionRoute) {
     const sessionId = sessionRoute[1];
     const action = sessionRoute[2] || "";
-    let session = authenticateSession(request, sessionId);
+    let deletePayload = null;
+    if (!action && effectiveMethod === "DELETE" && !sessionToken(request)) {
+      deletePayload = await getBody(request).catch(() => ({}));
+    }
+    let session = sessionToken(request)
+      ? authenticateSession(request, sessionId)
+      : database.authenticateSession(sessionId, String(deletePayload?.token || ""));
     if (!session) return sendJson(response, 401, { error: "会话不存在或访问令牌无效" });
     const scene = readSceneConfig(session.sceneId);
     if (!scene) return sendJson(response, 410, { error: "这个会话对应的场景已经不存在" });
 
     if (!action && request.method === "GET") return sendJson(response, 200, sessionState(session));
+
+    if (!action && effectiveMethod === "DELETE") {
+      if (session.mode !== "immersive") return sendJson(response, 409, { error: "只有沉浸模式会话会在离开时直接清除" });
+      cleanupSessionFiles(sessionId);
+      database.deleteSession(sessionId);
+      return sendJson(response, 200, { deleted: true });
+    }
 
     if (!action && request.method === "PATCH") {
       const payload = await getBody(request);
@@ -1207,16 +1401,42 @@ async function handleApi(request, response, pathname) {
       const configError = validateTranscriptionConfig(config);
       if (configError) return sendJson(response, 503, { error: configError });
       const mimeType = String(request.headers["content-type"] || "audio/webm").split(";")[0];
+      const requestId = String(request.headers["x-request-id"] || "");
+      if (!validRequestId(requestId)) return sendJson(response, 400, { error: "录音请求标识无效" });
       let audioBytes = 0;
       try {
         const audio = await getRawBody(request);
         audioBytes = audio.length;
         if (audio.length < 200) return sendJson(response, 400, { error: "录音内容太短，请重新录制" });
         const text = await callTranscription(config, audio, mimeType);
+        const recordingPath = sessionRecordingPath(sessionId, requestId);
+        fs.mkdirSync(path.dirname(recordingPath), { recursive: true });
+        durableWriteFile(recordingPath, audio);
         return sendJson(response, 200, { text });
       } catch (error) {
         logModelError("会话语音识别", error, { sessionId, sceneId: scene.id, endpoint: transcriptionEndpoint(config), model: config.transcriptionModel, mode: config.transcriptionMode, mimeType, audioBytes });
         return sendJson(response, 502, { error: "语音识别失败，请检查后台配置或服务端日志" });
+      }
+    }
+
+    if (action === "replay" && request.method === "POST") {
+      if (session.mode !== "immersive" || database.getLatestVerdict(sessionId)?.verdict?.status !== "won") {
+        return sendJson(response, 409, { error: "只能保存已经获胜的沉浸对话" });
+      }
+      const configError = validateSpeechConfig(config);
+      if (configError) return sendJson(response, 503, { error: configError });
+      const existing = database.getReplayBySession(sessionId);
+      if (existing) return sendJson(response, 200, replayPublicData(existing));
+      const lockToken = database.claimSession(sessionId, 300000);
+      if (!lockToken) return sendJson(response, 409, { error: "对话正在保存，请稍后重试" });
+      try {
+        const replay = await createReplay(config, scene, sessionId);
+        return sendJson(response, 201, replayPublicData(replay));
+      } catch (error) {
+        logModelError("保存会话回放", error, { sessionId, sceneId: scene.id });
+        return sendJson(response, 502, { error: `保存回放失败：${error.message}` });
+      } finally {
+        database.releaseSession(sessionId, lockToken);
       }
     }
 
@@ -1229,11 +1449,7 @@ async function handleApi(request, response, pathname) {
       const input = String(savedMessage?.content || payload.input || "").trim();
       if (!input || input.length > 4096) return sendJson(response, 400, { error: "语音文本长度必须在 1 到 4096 字之间" });
       try {
-        const audio = await callSpeech(config, input, {
-          voice: config.speechMode === "mimo" ? scene.ttsVoice : config.speechVoice,
-          voiceProfile: scene.voiceProfile,
-          speechStyle: savedMessage?.speechStyle || scene.openingSpeechStyle
-        });
+        const audio = await callSpeech(config, input);
         response.writeHead(200, { "Content-Type": audio.contentType, "Content-Length": audio.buffer.length, "Cache-Control": "no-store" });
         return response.end(audio.buffer);
       } catch (error) {
@@ -1242,7 +1458,25 @@ async function handleApi(request, response, pathname) {
       }
     }
 
+    if (action === "speech-stream" && request.method === "POST") {
+      const configError = validateSpeechConfig(config);
+      if (configError) return sendJson(response, 503, { error: configError });
+      const payload = await getBody(request);
+      const requestId = String(payload.requestId || "");
+      const savedMessage = requestId ? database.getMessage(sessionId, requestId, "opponent") : null;
+      const input = String(savedMessage?.content || payload.input || "").trim();
+      if (!input || input.length > 4096) return sendJson(response, 400, { error: "语音文本长度必须在 1 到 4096 字之间" });
+      try {
+        return await streamMimoSpeech(config, input, response);
+      } catch (error) {
+        logModelError("会话流式语音合成", error, { sessionId, sceneId: scene.id, endpoint: speechEndpoint(config), model: config.speechModel, voice: config.speechVoice, mode: config.speechMode });
+        if (!response.headersSent) return sendJson(response, 502, { error: "流式语音合成失败，请检查后台配置或服务端日志" });
+        return response.destroy(error);
+      }
+    }
+
     if (action === "messages" && request.method === "POST") {
+      if (session.status === "ended") return sendJson(response, 409, { error: "裁判已经判定这场争吵结束" });
       const payload = await getBody(request);
       const content = String(payload.content || "").trim();
       const requestId = String(payload.requestId || "");
@@ -1258,7 +1492,6 @@ async function handleApi(request, response, pathname) {
 
       let started = false;
       let reply = "";
-      let speechStyle = scene.openingSpeechStyle || scene.voiceProfile || "";
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 60000);
       try {
@@ -1268,24 +1501,54 @@ async function handleApi(request, response, pathname) {
           streamHeaders(response);
           started = true;
           response.write(reply);
+        } else if (scene.id === "restaurant") {
+          reply = await callModel(config, scene, argumentMessagesForModel(sessionId), "opponent");
         } else {
-          const modelOutput = await streamModel(config, scene, argumentMessagesForModel(sessionId), (chunk) => {
+          await streamModel(config, scene, argumentMessagesForModel(sessionId), (chunk) => {
             if (!started) { streamHeaders(response); started = true; }
             reply += chunk;
             response.write(chunk);
           }, controller.signal, "opponent");
-          speechStyle = modelOutput?.speechStyle || speechStyle;
         }
         if (!reply.trim()) throw new Error("争吵方没有返回有效内容");
-        database.appendMessage(sessionId, requestId, "opponent", reply.trim(), speechStyle);
+        try {
+          validateOpponentReply(scene, reply);
+        } catch (validationError) {
+          if (!config.apiKey || started) throw validationError;
+          reply = await callModel(config, scene, opponentRewriteMessages(argumentMessagesForModel(sessionId), reply, validationError.message), "opponent");
+          validateOpponentReply(scene, reply);
+        }
+        database.appendMessage(sessionId, requestId, "opponent", reply.trim());
         clearTimeout(timeout);
         if (!started) streamHeaders(response);
+        if (!started) response.write(reply.trim());
         return response.end();
       } catch (error) {
         clearTimeout(timeout);
         logModelError("会话争吵方", error, { sessionId, sceneId: scene.id, endpoint: buildEndpoint(config.baseUrl, "/chat/completions"), model: config.model });
         if (started) return response.destroy(error);
         return sendJson(response, 502, { error: error.message });
+      } finally {
+        database.releaseSession(sessionId, lockToken);
+      }
+    }
+
+    if (action === "judge" && request.method === "POST") {
+      if (session.mode !== "immersive") return sendJson(response, 409, { error: "裁判只在沉浸模式中逐轮判定" });
+      const messages = argumentMessagesForModel(sessionId);
+      if (!messages.some((message) => message.role === "user")) return sendJson(response, 400, { error: "至少完成一轮表达后才能判定" });
+      const version = database.messageVersion(sessionId);
+      const cached = database.getVerdict(sessionId, version);
+      if (cached) return sendJson(response, 200, { ...cached, cached: true });
+      const lockToken = database.claimSession(sessionId, 60000);
+      if (!lockToken) return sendJson(response, 409, { error: "这个会话正在处理其他请求，请稍后重试" });
+      try {
+        const verdict = config.apiKey ? await judgeConversation(config, scene, messages) : localRefereeVerdict(messages);
+        const saved = database.saveVerdict(sessionId, version, verdict, config.apiKey ? config.model : "本地裁判");
+        return sendJson(response, 200, { ...saved, cached: false });
+      } catch (error) {
+        logModelError("会话裁判判定", error, { sessionId, sceneId: scene.id, endpoint: buildEndpoint(config.baseUrl, "/chat/completions"), model: config.model, messageVersion: version });
+        return sendJson(response, 502, { error: "裁判暂时无法完成判定，请检查服务端日志" });
       } finally {
         database.releaseSession(sessionId, lockToken);
       }
@@ -1340,7 +1603,8 @@ async function handleApi(request, response, pathname) {
 
     if (action === "analyze" && request.method === "POST") {
       const messages = argumentMessagesForModel(sessionId);
-      if (messages.filter((message) => message.role === "user").length < 2) return sendJson(response, 400, { error: "至少完成两轮表达后才能生成有效复盘。" });
+      if (session.mode === "training" && messages.filter((message) => message.role === "user").length < 5) return sendJson(response, 400, { error: "至少完成 5 轮对话后才能生成有效复盘。" });
+      if (session.mode === "immersive" && session.status !== "ended") return sendJson(response, 400, { error: "沉浸模式需要在裁判判定结束后才能复盘。" });
       const version = database.messageVersion(sessionId);
       const cached = database.getReport(sessionId, version);
       if (cached) return sendJson(response, 200, { ...cached, cached: true });
@@ -1442,9 +1706,13 @@ const mimeTypes = {
   ".png": "image/png",
   ".jpg": "image/jpeg",
   ".jpeg": "image/jpeg",
-  ".webp": "image/webp"
+  ".webp": "image/webp",
+  ".wav": "audio/wav",
+  ".mp3": "audio/mpeg",
+  ".ogg": "audio/ogg",
+  ".m4a": "audio/mp4"
 };
-const publicFiles = new Set(["index.html", "admin.html", "admin.js", "create.html", "create.js", "lobby.js", "scene.html", "scene.js", "styles.css"]);
+const publicFiles = new Set(["index.html", "admin.html", "admin.js", "create.html", "create.js", "lobby.js", "scene.html", "scene.js", "replay.html", "replay.js", "styles.css"]);
 
 function sendFile(response, filePath) {
   response.writeHead(200, {
@@ -1459,6 +1727,13 @@ const server = http.createServer(async (request, response) => {
     const pathname = new URL(request.url, `http://${host}`).pathname;
     if (pathname.startsWith("/api/")) return await handleApi(request, response, pathname);
 
+    const replayAsset = pathname.match(/^\/replay-assets\/(replay-[a-f0-9]{24})\/(\d{3}-(?:user|opponent)\.wav)$/);
+    if (replayAsset) {
+      const assetPath = path.join(replayDir, replayAsset[1], replayAsset[2]);
+      if (database.getReplay(replayAsset[1]) && fs.existsSync(assetPath)) return sendFile(response, assetPath);
+      response.writeHead(404); return response.end("Not found");
+    }
+
     const sceneAsset = pathname.match(/^\/scene-assets\/([a-z0-9-]+)\/(background\.(?:png|jpg|webp))$/);
     if (sceneAsset) {
       const packageDir = publishedSceneDir(sceneAsset[1]);
@@ -1467,7 +1742,7 @@ const server = http.createServer(async (request, response) => {
       response.writeHead(404); return response.end("Not found");
     }
 
-    const fileName = pathname === "/" ? "index.html" : pathname === "/create" ? "create.html" : pathname.startsWith("/scene/") ? "scene.html" : decodeURIComponent(pathname).replace(/^\/+/, "");
+    const fileName = pathname === "/" ? "index.html" : pathname === "/create" ? "create.html" : pathname.startsWith("/scene/") ? "scene.html" : pathname.startsWith("/replay/") ? "replay.html" : decodeURIComponent(pathname).replace(/^\/+/, "");
     const publicBase = fileName.startsWith("assets/") ? path.join(root, "assets") : null;
     if (!publicFiles.has(fileName) && !publicBase) {
       response.writeHead(404); return response.end("Not found");

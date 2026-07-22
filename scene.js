@@ -4,8 +4,10 @@ const conversation = document.querySelector("#conversation");
 const input = document.querySelector("#replyInput");
 const submit = document.querySelector("#submitButton");
 const coachToggle = document.querySelector("#coachToggle");
+const trainingEndButton = document.querySelector("#trainingEndButton");
 const reviewButton = document.querySelector("#reviewButton");
-const voiceReviewButton = document.querySelector("#voiceReviewButton");
+const reviewTooltip = document.querySelector("#reviewTooltip");
+const voiceEndButton = document.querySelector("#voiceEndButton");
 const modelState = document.querySelector("#modelState");
 const analysisLoading = document.querySelector("#analysisLoading");
 const analysisReport = document.querySelector("#analysisReport");
@@ -14,6 +16,10 @@ const voiceOrbit = document.querySelector("#voiceOrbit");
 const voiceStatus = document.querySelector("#voiceStatus");
 const voiceHint = document.querySelector("#voiceHint");
 const speechPlayer = document.querySelector("#speechPlayer");
+const argumentOutcome = document.querySelector("#argumentOutcome");
+const outcomeDialog = document.querySelector("#outcomeDialog");
+const outcomeSaveReplay = document.querySelector("#outcomeSaveReplay");
+const outcomeSaveStatus = document.querySelector("#outcomeSaveStatus");
 
 let scene = null;
 let serviceStatus = {};
@@ -29,6 +35,12 @@ let mediaRecorder = null;
 let microphoneStream = null;
 let recordedChunks = [];
 let activeAudioUrl = "";
+let speechAudioContext = null;
+let scheduledSpeechTime = 0;
+let argumentEnded = false;
+let outcomeDialogTimer = 0;
+let endingImmersive = false;
+const reviewRequiredTurns = 5;
 
 function sessionStorageKey(mode = currentMode) {
   return `argue-practice-session:${slug}:${mode}`;
@@ -36,6 +48,15 @@ function sessionStorageKey(mode = currentMode) {
 
 function userTurnCount() {
   return sessionMessages.filter((message) => message.role === "user").length;
+}
+
+function reviewUnavailableReason() {
+  if (currentMode !== "training") return "复盘只在训练模式中使用";
+  if (analysisBusy) return "复盘正在生成，请稍候";
+  if (busy) return "争吵方还在回应，等这一轮结束后再复盘";
+  const remaining = Math.max(0, reviewRequiredTurns - userTurnCount());
+  if (remaining > 0) return `还差 ${remaining} 轮对话；完成 5 轮后可复盘`;
+  return "";
 }
 
 function setArt(file) {
@@ -77,17 +98,20 @@ function updateCoachToggle() {
 }
 
 function updateReviewButton() {
-  const available = userTurnCount() >= 2 && !busy && !analysisBusy;
+  const reason = reviewUnavailableReason();
+  const available = currentMode === "training" && !reason;
   reviewButton.disabled = !available;
-  voiceReviewButton.disabled = !available;
-  const title = available ? "让复盘分析师总结这次练习" : "完成两轮表达后可复盘";
-  reviewButton.title = title;
-  voiceReviewButton.title = title;
+  reviewButton.title = available ? "让复盘分析师总结这次练习" : reason;
+  reviewTooltip.dataset.tooltip = available ? "让复盘分析师总结这次练习" : reason;
+  reviewTooltip.dataset.disabled = String(!available);
+  trainingEndButton.disabled = currentMode !== "training" || busy || analysisBusy;
+  voiceEndButton.disabled = endingImmersive;
+  voiceEndButton.title = "结束本次沉浸对话并清除内容";
 }
 
 function setReadyState(message) {
   const sessionRef = activeSession?.id ? ` · 会话 ${activeSession.id.slice(8, 14)}` : "";
-  if (!modelReady) modelState.textContent = `本地演练模式 · 对话已持久化${sessionRef}`;
+  if (!modelReady) modelState.textContent = currentMode === "immersive" ? `本地演练模式 · 离开即清除${sessionRef}` : `本地演练模式 · 对话已持久化${sessionRef}`;
   else modelState.textContent = `${message || "争吵方已连接"}${coachMode ? " · 帮忙专家已加入" : ""}${sessionRef}`;
 }
 
@@ -121,6 +145,7 @@ async function loadSessionState() {
   if (state.mode !== currentMode) throw new Error("会话模式不匹配");
   coachMode = currentMode === "training" && Boolean(state.coachEnabled);
   sessionMessages = state.messages || [];
+  argumentEnded = state.status === "ended" && state.latestVerdict?.verdict?.status === "won";
   renderMessages(sessionMessages);
   updateCoachToggle();
   updateReviewButton();
@@ -138,10 +163,12 @@ async function createSession() {
   activeSession = { id: data.session.id, token: data.token };
   sessionStorage.setItem(sessionStorageKey(), JSON.stringify(activeSession));
   coachMode = false;
+  argumentEnded = false;
   sessionMessages = data.messages || [];
   renderMessages(sessionMessages);
   updateCoachToggle();
   updateReviewButton();
+  return { ...data.session, latestVerdict: null };
 }
 
 async function restoreOrCreateSession() {
@@ -152,15 +179,47 @@ async function restoreOrCreateSession() {
       if (state.status === "reviewed") {
         sessionStorage.removeItem(sessionStorageKey());
         activeSession = null;
-        await createSession();
+        return createSession();
       }
-      return;
+      return state;
     } catch {
       sessionStorage.removeItem(sessionStorageKey());
       activeSession = null;
     }
   }
-  await createSession();
+  return createSession();
+}
+
+async function judgeImmersiveTurn() {
+  const response = await fetch(`/api/sessions/${activeSession.id}/judge`, {
+    method: "POST",
+    headers: sessionHeaders({ "Content-Type": "application/json" }),
+    body: "{}"
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || "裁判暂时无法判断这一轮");
+  return data.verdict;
+}
+
+function showArgumentOutcome(verdict) {
+  if (!verdict || verdict.status !== "won") return;
+  argumentEnded = true;
+  window.speechSynthesis?.cancel();
+  if (mediaRecorder?.state === "recording") mediaRecorder.stop();
+  microphoneStream?.getTracks().forEach((track) => track.stop());
+  microphoneStream = null;
+  document.querySelector("#outcomeTitle").textContent = verdict.achievement || "你赢了。";
+  document.querySelector("#outcomeCopy").textContent = verdict.resultCopy;
+  document.querySelector("#outcomeMood").textContent = verdict.mood?.label || "终于松了一口气";
+  argumentOutcome.hidden = false;
+  page.dataset.argumentEnded = "true";
+  setVoiceState("ended", "裁判判定：这场争吵结束了", "你已经不需要继续回应");
+  recordButton.disabled = true;
+  updateReviewButton();
+  clearTimeout(outcomeDialogTimer);
+  outcomeDialogTimer = window.setTimeout(() => {
+    if (!outcomeDialog.open && page.dataset.phase === "arena") outcomeDialog.showModal();
+  }, 1400);
 }
 
 async function streamAgent(action, role, payload) {
@@ -203,6 +262,108 @@ function browserSpeak(text) {
   });
 }
 
+function ensureSpeechAudioContext() {
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextClass) throw new Error("当前浏览器不支持流式语音播放");
+  if (!speechAudioContext || speechAudioContext.state === "closed") speechAudioContext = new AudioContextClass();
+  return speechAudioContext;
+}
+
+function decodePcm16Base64(base64, sampleRate = 24000) {
+  const binary = atob(base64);
+  const sampleCount = Math.floor(binary.length / 2);
+  const context = ensureSpeechAudioContext();
+  const audioBuffer = context.createBuffer(1, sampleCount, sampleRate);
+  const channel = audioBuffer.getChannelData(0);
+  for (let index = 0; index < sampleCount; index += 1) {
+    const low = binary.charCodeAt(index * 2);
+    const high = binary.charCodeAt(index * 2 + 1);
+    const value = (high << 8) | low;
+    channel[index] = (value >= 0x8000 ? value - 0x10000 : value) / 32768;
+  }
+  return audioBuffer;
+}
+
+async function playPcm16Stream(response) {
+  const context = ensureSpeechAudioContext();
+  await context.resume();
+  speechPlayer.pause();
+  scheduledSpeechTime = Math.max(context.currentTime + 0.08, scheduledSpeechTime);
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let chunkCount = 0;
+  let lastEnded = Promise.resolve();
+  const schedule = (base64) => {
+    const audioBuffer = decodePcm16Base64(base64, Number(response.headers.get("x-audio-sample-rate") || 24000));
+    const source = context.createBufferSource();
+    source.buffer = audioBuffer;
+    source.connect(context.destination);
+    source.start(scheduledSpeechTime);
+    scheduledSpeechTime += audioBuffer.duration;
+    chunkCount += 1;
+    lastEnded = new Promise((resolve) => { source.onended = resolve; });
+  };
+  const consumeLine = (line) => {
+    if (!line.trim()) return;
+    const item = JSON.parse(line);
+    if (item.audio) schedule(item.audio);
+  };
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split(/\r?\n/);
+    buffer = lines.pop() || "";
+    for (const line of lines) consumeLine(line);
+  }
+  buffer += decoder.decode();
+  if (buffer.trim()) consumeLine(buffer);
+  if (!chunkCount) throw new Error("流式语音没有返回音频块");
+  await lastEnded;
+}
+
+async function speakRemoteAudio(text, requestId = "") {
+  const payload = JSON.stringify({ input: text, requestId });
+  if (serviceStatus.speechMode === "mimo") {
+    const streamResponse = await fetch(`/api/sessions/${activeSession.id}/speech-stream`, {
+      method: "POST",
+      headers: sessionHeaders({ "Content-Type": "application/json" }),
+      body: payload
+    });
+    if (streamResponse.ok) {
+      try {
+        await playPcm16Stream(streamResponse);
+        return;
+      } catch {
+        // 部分兼容接口会接受 stream 参数但只返回空流，继续走完整音频。
+      }
+    }
+    if (streamResponse.status !== 409 && streamResponse.status !== 404) {
+      const data = await streamResponse.json().catch(() => ({}));
+      throw new Error(data.error || "流式语音合成失败");
+    }
+  }
+  const response = await fetch(`/api/sessions/${activeSession.id}/speech`, {
+    method: "POST",
+    headers: sessionHeaders({ "Content-Type": "application/json" }),
+    body: payload
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || "语音合成失败");
+  }
+  if (activeAudioUrl) URL.revokeObjectURL(activeAudioUrl);
+  activeAudioUrl = URL.createObjectURL(await response.blob());
+  speechPlayer.src = activeAudioUrl;
+  const finished = new Promise((resolve, reject) => {
+    speechPlayer.onended = resolve;
+    speechPlayer.onerror = () => reject(new Error("生成的音频无法播放"));
+  });
+  await speechPlayer.play();
+  await finished;
+}
+
 async function speakText(text, requestId = "") {
   setVoiceState("speaking", "争吵方正在说话…", "听完后，点麦克风回应");
   try {
@@ -210,24 +371,7 @@ async function speakText(text, requestId = "") {
       await browserSpeak(text);
       return;
     }
-    const response = await fetch(`/api/sessions/${activeSession.id}/speech`, {
-      method: "POST",
-      headers: sessionHeaders({ "Content-Type": "application/json" }),
-      body: JSON.stringify({ input: text, requestId })
-    });
-    if (!response.ok) {
-      const data = await response.json().catch(() => ({}));
-      throw new Error(data.error || "语音合成失败");
-    }
-    if (activeAudioUrl) URL.revokeObjectURL(activeAudioUrl);
-    activeAudioUrl = URL.createObjectURL(await response.blob());
-    speechPlayer.src = activeAudioUrl;
-    const finished = new Promise((resolve, reject) => {
-      speechPlayer.onended = resolve;
-      speechPlayer.onerror = () => reject(new Error("生成的音频无法播放"));
-    });
-    await speechPlayer.play();
-    await finished;
+    await speakRemoteAudio(text, requestId);
   } catch (error) {
     voiceStatus.textContent = `远程语音失败，使用浏览器声音：${error.message}`;
     await browserSpeak(text);
@@ -266,7 +410,7 @@ async function startRecording() {
 function stopRecording() {
   if (mediaRecorder?.state === "recording") {
     mediaRecorder.stop();
-    setVoiceState("transcribing", "正在识别你说的话…", "录音只发送给已配置的识别服务");
+    setVoiceState("transcribing", "正在识别你说的话…", "录音会临时与本次会话关联");
   }
 }
 
@@ -317,28 +461,36 @@ async function convertRecordingToWav(recording) {
 }
 
 async function processRecording() {
+  if (argumentEnded) return;
   busy = true;
   updateReviewButton();
   const mimeType = mediaRecorder.mimeType || recordedChunks[0]?.type || "audio/webm";
   const recording = new Blob(recordedChunks, { type: mimeType });
   try {
     const audio = await convertRecordingToWav(recording);
+    const requestId = `voice-${crypto.randomUUID()}`;
     const transcriptionResponse = await fetch(`/api/sessions/${activeSession.id}/transcriptions`, {
       method: "POST",
-      headers: sessionHeaders({ "Content-Type": "audio/wav" }),
+      headers: sessionHeaders({ "Content-Type": "audio/wav", "X-Request-Id": requestId }),
       body: audio
     });
     const transcription = await transcriptionResponse.json().catch(() => ({}));
     if (!transcriptionResponse.ok) throw new Error(transcription.error || "语音识别失败");
     const text = String(transcription.text || "").trim();
     if (!text) throw new Error("没有识别到清楚的话，请再说一次");
-    const requestId = `voice-${crypto.randomUUID()}`;
     addLine("user", text);
     sessionMessages.push({ role: "user", content: text, requestId });
     setVoiceState("thinking", "争吵方正在回应…", `识别结果：${text}`);
     const reply = await streamAgent("messages", "opponent", { content: text, requestId });
     sessionMessages.push({ role: "opponent", content: reply, requestId });
+    const verdictPromise = judgeImmersiveTurn().catch((error) => ({ error }));
     await speakText(reply, requestId);
+    const verdictResult = await verdictPromise;
+    if (verdictResult?.error) {
+      setVoiceState("idle", "裁判暂时没有完成判定", "你可以继续回应；异常详情已记录在服务端");
+    } else if (verdictResult?.status === "won") {
+      showArgumentOutcome(verdictResult);
+    }
   } catch (error) {
     await loadSessionState().catch(() => {});
     setVoiceState("error", `这一轮失败：${error.message}`, "点麦克风重新说一次");
@@ -394,9 +546,11 @@ function renderReport(report, model) {
 }
 
 async function openReview() {
-  if (userTurnCount() < 2 || busy || analysisBusy) return;
+  if (!((currentMode === "training" && userTurnCount() >= reviewRequiredTurns) || (currentMode === "immersive" && argumentEnded)) || busy || analysisBusy) return;
   window.speechSynthesis?.cancel();
   speechPlayer.pause();
+  clearTimeout(outcomeDialogTimer);
+  if (outcomeDialog.open) outcomeDialog.close();
   page.dataset.phase = "review";
   const currentVersion = sessionMessages.filter((message) => message.role !== "coach").length;
   if (analyzedVersion === currentVersion && !analysisReport.hidden) return;
@@ -426,8 +580,12 @@ async function startMode(mode) {
   page.dataset.phase = "arena";
   busy = true;
   try {
-    await restoreOrCreateSession();
-    setReadyState(serviceStatus.model ? `三个智能体已连接 · ${serviceStatus.model} · 对话流式` : "");
+    const state = await restoreOrCreateSession();
+    setReadyState(serviceStatus.model ? `${mode === "immersive" ? "争吵方与裁判" : "三个智能体"}已连接 · ${serviceStatus.model} · 对话流式` : "");
+    if (mode === "immersive" && state?.status === "ended" && state.latestVerdict?.verdict?.status === "won") {
+      showArgumentOutcome(state.latestVerdict.verdict);
+      return;
+    }
     if (mode === "training") input.focus();
     else {
       const lastOpponent = [...sessionMessages].reverse().find((message) => message.role === "opponent");
@@ -440,6 +598,56 @@ async function startMode(mode) {
     busy = false;
     updateReviewButton();
   }
+}
+
+function stopLocalMedia() {
+  window.speechSynthesis?.cancel();
+  speechPlayer.pause();
+  if (mediaRecorder?.state === "recording") mediaRecorder.stop();
+  microphoneStream?.getTracks().forEach((track) => track.stop());
+  microphoneStream = null;
+  if (activeAudioUrl) {
+    URL.revokeObjectURL(activeAudioUrl);
+    activeAudioUrl = "";
+  }
+}
+
+function clearStoredSession(mode = currentMode) {
+  if (mode) sessionStorage.removeItem(sessionStorageKey(mode));
+}
+
+function requestDeleteImmersiveSession({ beacon = false } = {}) {
+  if (currentMode !== "immersive" || !activeSession?.id || !activeSession?.token) return;
+  const url = `/api/sessions/${activeSession.id}`;
+  const body = JSON.stringify({ token: activeSession.token });
+  if (beacon && navigator.sendBeacon) {
+    const blob = new Blob([body], { type: "application/json" });
+    navigator.sendBeacon(`${url}?_method=DELETE`, blob);
+    return;
+  }
+  fetch(url, {
+    method: "DELETE",
+    headers: sessionHeaders({ "Content-Type": "application/json" }),
+    body: "{}",
+    keepalive: true
+  }).catch(() => {});
+}
+
+function finishImmersiveSession(target = "/") {
+  if (endingImmersive) return;
+  endingImmersive = true;
+  stopLocalMedia();
+  requestDeleteImmersiveSession();
+  clearStoredSession("immersive");
+  activeSession = null;
+  location.href = target;
+}
+
+function finishTrainingSession(target = "/") {
+  if (busy || analysisBusy) return;
+  sessionStorage.removeItem(sessionStorageKey("training"));
+  activeSession = null;
+  location.href = target;
 }
 
 async function load() {
@@ -481,8 +689,14 @@ coachToggle.addEventListener("click", async () => {
   }
 });
 
+trainingEndButton.addEventListener("click", () => finishTrainingSession("/"));
 reviewButton.addEventListener("click", openReview);
-voiceReviewButton.addEventListener("click", openReview);
+voiceEndButton.addEventListener("click", () => finishImmersiveSession("/"));
+document.querySelector("#arenaExit").addEventListener("click", (event) => {
+  if (currentMode !== "immersive") return;
+  event.preventDefault();
+  finishImmersiveSession("/");
+});
 document.querySelector("#restartPractice").addEventListener("click", () => {
   sessionStorage.removeItem(sessionStorageKey("training"));
   sessionStorage.removeItem(sessionStorageKey("immersive"));
@@ -490,8 +704,44 @@ document.querySelector("#restartPractice").addEventListener("click", () => {
 });
 
 recordButton.addEventListener("click", () => {
+  if (argumentEnded) return;
   if (mediaRecorder?.state === "recording") stopRecording();
   else if (!busy) startRecording();
+});
+
+document.querySelector("#outcomeLeave").addEventListener("click", () => finishImmersiveSession("/"));
+document.querySelector("#outcomeReview").addEventListener("click", openReview);
+
+outcomeSaveReplay.addEventListener("click", async () => {
+  if (busy) return;
+  busy = true;
+  outcomeSaveReplay.disabled = true;
+  outcomeSaveReplay.textContent = "正在保存语音…";
+  outcomeSaveStatus.textContent = "正在整理双方的文字和语音，请稍候。";
+  try {
+    const response = await fetch(`/api/sessions/${activeSession.id}/replay`, {
+      method: "POST",
+      headers: sessionHeaders({ "Content-Type": "application/json" }),
+      body: "{}"
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || "保存回放失败");
+    const replayUrl = new URL(`/replay/${data.id}`, location.origin).href;
+    clearStoredSession("immersive");
+    outcomeSaveStatus.textContent = "已保存，正在打开回放页。";
+    if (navigator.share) {
+      await navigator.share({ title: `吵架练习室 · ${scene.title}`, text: "这是我保存的一次对话回放。", url: replayUrl }).catch(() => {});
+    } else {
+      await navigator.clipboard?.writeText(replayUrl).catch(() => {});
+    }
+    location.href = replayUrl;
+  } catch (error) {
+    outcomeSaveStatus.textContent = error.message;
+    outcomeSaveReplay.disabled = false;
+    outcomeSaveReplay.textContent = "重试保存并分享";
+  } finally {
+    busy = false;
+  }
 });
 
 input.addEventListener("keydown", (event) => {
@@ -524,8 +774,11 @@ document.querySelector("#replyForm").addEventListener("submit", async (event) =>
 });
 
 window.addEventListener("beforeunload", () => {
-  microphoneStream?.getTracks().forEach((track) => track.stop());
-  if (activeAudioUrl) URL.revokeObjectURL(activeAudioUrl);
+  if (currentMode === "immersive" && activeSession && !argumentEnded) {
+    requestDeleteImmersiveSession({ beacon: true });
+    clearStoredSession("immersive");
+  }
+  stopLocalMedia();
 });
 
 updateCoachToggle();

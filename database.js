@@ -15,6 +15,34 @@ function json(value, fallback = null) {
   try { return JSON.parse(value); } catch { return fallback; }
 }
 
+function tableColumns(db, tableName) {
+  return db.prepare(`PRAGMA table_info(${tableName})`).all().map((column) => column.name);
+}
+
+function dropMessageSpeechStyleColumn(db) {
+  if (!tableColumns(db, "messages").includes("speech_style")) return;
+  db.exec(`
+    PRAGMA foreign_keys = OFF;
+    BEGIN IMMEDIATE;
+    CREATE TABLE messages_new (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+      request_id TEXT NOT NULL,
+      role TEXT NOT NULL CHECK(role IN ('user', 'opponent', 'coach')),
+      content TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      UNIQUE(session_id, request_id, role)
+    );
+    INSERT INTO messages_new (id, session_id, request_id, role, content, created_at)
+      SELECT id, session_id, request_id, role, content, created_at FROM messages;
+    DROP TABLE messages;
+    ALTER TABLE messages_new RENAME TO messages;
+    CREATE INDEX messages_session_id_id ON messages(session_id, id);
+    COMMIT;
+    PRAGMA foreign_keys = ON;
+  `);
+}
+
 function createDatabase(filePath) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   const db = new DatabaseSync(filePath);
@@ -43,7 +71,6 @@ function createDatabase(filePath) {
       request_id TEXT NOT NULL,
       role TEXT NOT NULL CHECK(role IN ('user', 'opponent', 'coach')),
       content TEXT NOT NULL,
-      speech_style TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL,
       UNIQUE(session_id, request_id, role)
     );
@@ -57,6 +84,24 @@ function createDatabase(filePath) {
       model TEXT NOT NULL,
       created_at TEXT NOT NULL,
       UNIQUE(session_id, message_version)
+    );
+
+    CREATE TABLE IF NOT EXISTS verdicts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+      message_version INTEGER NOT NULL,
+      verdict_json TEXT NOT NULL,
+      model TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      UNIQUE(session_id, message_version)
+    );
+
+    CREATE TABLE IF NOT EXISTS replays (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL UNIQUE REFERENCES sessions(id) ON DELETE CASCADE,
+      scene_id TEXT NOT NULL,
+      manifest_json TEXT NOT NULL,
+      created_at TEXT NOT NULL
     );
 
     CREATE TABLE IF NOT EXISTS scene_jobs (
@@ -76,23 +121,21 @@ function createDatabase(filePath) {
     CREATE INDEX IF NOT EXISTS scene_jobs_status ON scene_jobs(status);
   `);
 
-  const sessionColumns = db.prepare("PRAGMA table_info(sessions)").all().map((column) => column.name);
+  const sessionColumns = tableColumns(db, "sessions");
   if (!sessionColumns.includes("mode")) {
     db.exec("ALTER TABLE sessions ADD COLUMN mode TEXT NOT NULL DEFAULT 'training'");
   }
-  const messageColumns = db.prepare("PRAGMA table_info(messages)").all().map((column) => column.name);
-  if (!messageColumns.includes("speech_style")) {
-    db.exec("ALTER TABLE messages ADD COLUMN speech_style TEXT NOT NULL DEFAULT ''");
-  }
+  dropMessageSpeechStyleColumn(db);
 
   const statements = {
     insertSession: db.prepare("INSERT INTO sessions (id, token_hash, scene_id, mode, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)"),
     getSessionByToken: db.prepare("SELECT * FROM sessions WHERE id = ? AND token_hash = ?"),
     getSessionById: db.prepare("SELECT * FROM sessions WHERE id = ?"),
+    deleteSession: db.prepare("DELETE FROM sessions WHERE id = ?"),
     updateCoach: db.prepare("UPDATE sessions SET coach_enabled = ?, updated_at = ? WHERE id = ?"),
     claimSession: db.prepare("UPDATE sessions SET lock_token = ?, lock_until = ?, updated_at = ? WHERE id = ? AND (lock_until IS NULL OR lock_until < ?)"),
     releaseSession: db.prepare("UPDATE sessions SET lock_token = NULL, lock_until = NULL, updated_at = ? WHERE id = ? AND lock_token = ?"),
-    insertMessage: db.prepare("INSERT OR IGNORE INTO messages (session_id, request_id, role, content, speech_style, created_at) VALUES (?, ?, ?, ?, ?, ?)"),
+    insertMessage: db.prepare("INSERT OR IGNORE INTO messages (session_id, request_id, role, content, created_at) VALUES (?, ?, ?, ?, ?)"),
     getMessage: db.prepare("SELECT * FROM messages WHERE session_id = ? AND request_id = ? AND role = ?"),
     listMessages: db.prepare("SELECT * FROM messages WHERE session_id = ? ORDER BY id"),
     listArgumentMessages: db.prepare("SELECT * FROM messages WHERE session_id = ? AND role IN ('user', 'opponent') ORDER BY id"),
@@ -102,6 +145,13 @@ function createDatabase(filePath) {
     getReport: db.prepare("SELECT * FROM reports WHERE session_id = ? AND message_version = ?"),
     saveReport: db.prepare("INSERT INTO reports (session_id, message_version, report_json, model, created_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(session_id, message_version) DO UPDATE SET report_json = excluded.report_json, model = excluded.model, created_at = excluded.created_at"),
     markReviewed: db.prepare("UPDATE sessions SET status = 'reviewed', updated_at = ? WHERE id = ?"),
+    getVerdict: db.prepare("SELECT * FROM verdicts WHERE session_id = ? AND message_version = ?"),
+    getLatestVerdict: db.prepare("SELECT * FROM verdicts WHERE session_id = ? ORDER BY message_version DESC LIMIT 1"),
+    saveVerdict: db.prepare("INSERT INTO verdicts (session_id, message_version, verdict_json, model, created_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(session_id, message_version) DO UPDATE SET verdict_json = excluded.verdict_json, model = excluded.model, created_at = excluded.created_at"),
+    markEnded: db.prepare("UPDATE sessions SET status = 'ended', updated_at = ? WHERE id = ? AND status = 'active'"),
+    getReplay: db.prepare("SELECT * FROM replays WHERE id = ?"),
+    getReplayBySession: db.prepare("SELECT * FROM replays WHERE session_id = ?"),
+    insertReplay: db.prepare("INSERT INTO replays (id, session_id, scene_id, manifest_json, created_at) VALUES (?, ?, ?, ?, ?)"),
     getJob: db.prepare("SELECT * FROM scene_jobs WHERE id = ?"),
     findJobByKey: db.prepare("SELECT * FROM scene_jobs WHERE idempotency_key = ?"),
     listRecoverableJobs: db.prepare("SELECT * FROM scene_jobs WHERE status NOT IN ('completed', 'failed') ORDER BY created_at"),
@@ -131,7 +181,7 @@ function createDatabase(filePath) {
   }
 
   function mapMessage(row) {
-    return row ? { id: Number(row.id), requestId: row.request_id, role: row.role, content: row.content, speechStyle: row.speech_style || "", createdAt: row.created_at } : null;
+    return row ? { id: Number(row.id), requestId: row.request_id, role: row.role, content: row.content, createdAt: row.created_at } : null;
   }
 
   function mapJob(row) {
@@ -144,17 +194,26 @@ function createDatabase(filePath) {
     };
   }
 
+  function mapVerdict(row) {
+    return row ? { verdict: json(row.verdict_json, {}), messageVersion: Number(row.message_version), model: row.model, createdAt: row.created_at } : null;
+  }
+
+  function mapReplay(row) {
+    if (!row) return null;
+    return { id: row.id, sessionId: row.session_id, sceneId: row.scene_id, manifest: json(row.manifest_json, {}), createdAt: row.created_at };
+  }
+
   return {
     close() { db.close(); },
 
-    createSession(sceneId, openingMessage, mode = "training", openingSpeechStyle = "") {
+    createSession(sceneId, openingMessage, mode = "training") {
       const id = `session-${crypto.randomUUID()}`;
       const token = crypto.randomBytes(32).toString("base64url");
       const createdAt = nowIso();
       db.exec("BEGIN IMMEDIATE");
       try {
         statements.insertSession.run(id, hashToken(token), sceneId, mode, createdAt, createdAt);
-        statements.insertMessage.run(id, "opening", "opponent", openingMessage, String(openingSpeechStyle).slice(0, 1000), createdAt);
+        statements.insertMessage.run(id, "opening", "opponent", openingMessage, createdAt);
         db.exec("COMMIT");
       } catch (error) {
         db.exec("ROLLBACK");
@@ -169,6 +228,10 @@ function createDatabase(filePath) {
 
     getSession(id) {
       return mapSession(statements.getSessionById.get(id));
+    },
+
+    deleteSession(id) {
+      return Number(statements.deleteSession.run(id).changes || 0);
     },
 
     setCoachEnabled(id, enabled) {
@@ -187,8 +250,8 @@ function createDatabase(filePath) {
       statements.releaseSession.run(nowIso(), id, lockToken);
     },
 
-    appendMessage(sessionId, requestId, role, content, speechStyle = "") {
-      statements.insertMessage.run(sessionId, requestId, role, String(content).slice(0, 12000), String(speechStyle).slice(0, 1000), nowIso());
+    appendMessage(sessionId, requestId, role, content) {
+      statements.insertMessage.run(sessionId, requestId, role, String(content).slice(0, 12000), nowIso());
       return mapMessage(statements.getMessage.get(sessionId, requestId, role));
     },
 
@@ -221,6 +284,33 @@ function createDatabase(filePath) {
       statements.saveReport.run(sessionId, version, JSON.stringify(report), model, nowIso());
       statements.markReviewed.run(nowIso(), sessionId);
       return this.getReport(sessionId, version);
+    },
+
+    getVerdict(sessionId, version) {
+      return mapVerdict(statements.getVerdict.get(sessionId, version));
+    },
+
+    getLatestVerdict(sessionId) {
+      return mapVerdict(statements.getLatestVerdict.get(sessionId));
+    },
+
+    saveVerdict(sessionId, version, verdict, model) {
+      statements.saveVerdict.run(sessionId, version, JSON.stringify(verdict), model, nowIso());
+      if (verdict?.status === "won") statements.markEnded.run(nowIso(), sessionId);
+      return this.getVerdict(sessionId, version);
+    },
+
+    getReplay(id) {
+      return mapReplay(statements.getReplay.get(id));
+    },
+
+    getReplayBySession(sessionId) {
+      return mapReplay(statements.getReplayBySession.get(sessionId));
+    },
+
+    saveReplay(id, sessionId, sceneId, manifest) {
+      statements.insertReplay.run(id, sessionId, sceneId, JSON.stringify(manifest), nowIso());
+      return this.getReplay(id);
     },
 
     getJob(id) { return mapJob(statements.getJob.get(id)); },

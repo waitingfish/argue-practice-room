@@ -11,7 +11,7 @@ const testTranscriptionConnectionButton = document.querySelector("#testTranscrip
 const testSpeechConnectionButton = document.querySelector("#testSpeechConnection");
 let accessCode = "";
 
-const fields = ["baseUrl", "model", "temperature", "systemPrompt", "imageBaseUrl", "imageModel", "imageTimeoutSeconds", "transcriptionMode", "transcriptionBaseUrl", "transcriptionModel", "transcriptionTimeoutSeconds", "speechMode", "speechBaseUrl", "speechModel", "speechVoice", "speechInstruction", "speechFormat", "speechSpeed", "speechTimeoutSeconds"];
+const fields = ["baseUrl", "model", "temperature", "systemPrompt", "imageBaseUrl", "imageModel", "imageTimeoutSeconds", "transcriptionMode", "transcriptionBaseUrl", "transcriptionModel", "transcriptionTimeoutSeconds", "speechMode", "speechBaseUrl", "speechModel", "speechVoice", "speechFormat", "speechTimeoutSeconds"];
 
 function authHeaders() {
   return { "Content-Type": "application/json", "x-admin-password": accessCode };

@@ -24,7 +24,7 @@
           <button class="mode-card" type="button" data-mode-choice="training">
             <span class="mode-icon" aria-hidden="true">⌨</span>
             <strong>训练模式</strong>
-            <small>打字对话 · 可找专家帮忙 · 随时复盘</small>
+            <small>打字对话 · 可找专家帮忙 · 5 轮后复盘</small>
           </button>
           <button class="mode-card" type="button" data-mode-choice="immersive">
             <span class="mode-icon microphone-icon" aria-hidden="true">●</span>
@@ -37,7 +37,7 @@
 
       <section class="route-arena">
         <div class="arena-art" aria-hidden="true"></div>
-        <a class="back-button light" href="/">退出</a>
+        <a class="back-button light" id="arenaExit" href="/">退出</a>
         <div class="arena-copy">
           <p class="scene-kicker" id="sceneKicker"></p>
           <h1 id="arenaTitle"></h1>
@@ -48,7 +48,10 @@
           <div class="speak-head">
             <label for="replyInput">现在，开口</label>
             <div class="agent-actions">
-              <button class="review-trigger" id="reviewButton" type="button" disabled title="完成两轮表达后可复盘">结束并复盘</button>
+              <button class="review-trigger" id="trainingEndButton" type="button">结束</button>
+              <span class="review-tooltip" id="reviewTooltip" data-disabled="true" data-tooltip="完成 5 轮对话后可复盘">
+                <button class="review-trigger" id="reviewButton" type="button" disabled aria-describedby="reviewTooltip">复盘</button>
+              </span>
               <button class="coach-toggle" id="coachToggle" type="button" aria-pressed="false">找人帮忙</button>
             </div>
           </div>
@@ -61,7 +64,7 @@
         <section class="voice-box" id="voiceBox" aria-live="polite">
           <div class="voice-head">
             <div><span>沉浸对话</span><p id="voiceStatus">正在准备语音...</p></div>
-            <button class="review-trigger" id="voiceReviewButton" type="button" disabled>结束并复盘</button>
+            <button class="review-trigger" id="voiceEndButton" type="button">结束</button>
           </div>
           <div class="voice-orbit" id="voiceOrbit" data-state="idle">
             <div class="voice-bars" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
@@ -70,7 +73,24 @@
           <p class="voice-hint" id="voiceHint">点一下开始说，再点一下结束</p>
           <audio id="speechPlayer" preload="auto"></audio>
         </section>
+        <section class="argument-outcome" id="argumentOutcome" hidden aria-live="assertive">
+          <p>裁判判定 · 这场争吵结束了</p>
+          <h2 id="outcomeTitle">你赢了。</h2>
+          <p id="outcomeCopy"></p>
+          <div class="outcome-mood"><span>吵完这一刻</span><strong id="outcomeMood"></strong></div>
+        </section>
       </section>
+
+      <dialog class="outcome-dialog" id="outcomeDialog" aria-labelledby="outcomeDialogTitle">
+        <p>裁判已经收起了哨子</p>
+        <h2 id="outcomeDialogTitle">要看看你是怎么赢的吗？</h2>
+        <div>
+          <button class="primary" id="outcomeReview" type="button">生成复盘报告</button>
+          <button id="outcomeSaveReplay" type="button">保存对话并分享</button>
+          <button id="outcomeLeave" type="button">离开，回到首页</button>
+        </div>
+        <p class="outcome-save-status" id="outcomeSaveStatus" aria-live="polite"></p>
+      </dialog>
 
       <section class="route-review">
         <header class="review-header">

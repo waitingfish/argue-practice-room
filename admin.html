@@ -73,9 +73,7 @@
           <label>音频格式
             <select id="speechFormat" name="speechFormat"><option value="mp3">MP3</option><option value="opus">Opus</option><option value="aac">AAC</option><option value="flac">FLAC</option><option value="wav">WAV</option></select>
           </label>
-          <label>语速<input id="speechSpeed" name="speechSpeed" type="number" min="0.25" max="4" step="0.05" value="1" /></label>
           <label>合成超时秒数<input id="speechTimeoutSeconds" name="speechTimeoutSeconds" type="number" min="15" max="300" step="5" value="120" /></label>
-          <label class="wide-label">语气指令<input id="speechInstruction" name="speechInstruction" type="text" placeholder="用自然、清晰、有情绪但不过度夸张的中文语气说话。" /></label>
           <label class="wide-label">合成 API Key<input id="speechApiKey" name="speechApiKey" type="password" autocomplete="new-password" placeholder="留空则使用对话 API Key" /></label>
           <label class="wide-label">新的后台访问码
             <input id="newAdminPassword" name="newAdminPassword" type="password" autocomplete="new-password" placeholder="留空则不修改" />

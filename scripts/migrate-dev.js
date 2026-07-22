@@ -77,17 +77,33 @@ function migrateSceneVoices() {
     const male = /他|男性|男友|丈夫|父亲|哥哥|弟弟/.test(description);
     const female = /她|女性|女友|妻子|母亲|姐姐|妹妹/.test(description);
     scene.opponentGender = male && !female ? "male" : "female";
-    scene.ttsVoice = scene.opponentGender === "male" ? "苏打" : "冰糖";
-    scene.voiceProfile = `${scene.opponentGender === "male" ? "男性" : "女性"}中文声音，年龄和声音质感符合场景中的争吵方，表达自然真实。`;
-    scene.openingSpeechStyle = "带着克制的不耐烦，语速中等，反问处稍加重音，句间停顿自然。";
     writeJson(scenePath, scene);
     migrated += 1;
   }
-  return { changed: migrated > 0, message: `已为历史生成场景补充语音配置 ${migrated} 个` };
+  return { changed: migrated > 0, message: `已为历史生成场景补充对方性别 ${migrated} 个` };
+}
+
+function migrateSceneReferees() {
+  const scenePaths = fs.existsSync(sceneConfigDir)
+    ? fs.readdirSync(sceneConfigDir).filter((name) => name.endsWith(".json")).map((name) => path.join(sceneConfigDir, name))
+    : [];
+  if (fs.existsSync(publishedScenesDir)) {
+    for (const id of fs.readdirSync(publishedScenesDir)) scenePaths.push(path.join(publishedScenesDir, id, "scene.json"));
+  }
+  let migrated = 0;
+  for (const scenePath of scenePaths) {
+    const scene = readJson(scenePath);
+    if (!scene || (scene.winCondition && scene.refereePrompt)) continue;
+    scene.winCondition ||= "对方明确接受用户提出的合理边界、具体请求或行动方案，并形成可观察的收束。";
+    scene.refereePrompt ||= "重点检查对方是否真正让步或承诺行动；辱骂、压制、敷衍、沉默和单方面宣布胜利都不算赢。";
+    writeJson(scenePath, scene);
+    migrated += 1;
+  }
+  return { changed: migrated > 0, message: `已为历史场景补充裁判配置 ${migrated} 个` };
 }
 
 try {
-  const results = [migrateConfig(), migrateLegacyJobs(), migrateLegacyScenes(), migrateSceneVoices()];
+  const results = [migrateConfig(), migrateLegacyJobs(), migrateLegacyScenes(), migrateSceneVoices(), migrateSceneReferees()];
   for (const result of results) console.log(`${result.changed ? "✓" : "-"} ${result.message}`);
 } finally {
   database.close();
