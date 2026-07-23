@@ -31,7 +31,7 @@ const coachRolePrompt = `你是“吵架练习室”里的 AI 教练，不是争
 
 const analystRolePrompt = `你是“吵架练习室”的复盘分析师，不是争吵方，也不是实时教练。你只分析已经发生的对话，不继续角色扮演。重点观察用户如何表达事实、感受、请求和边界，以及面对压力时的沟通变化。性格部分只能描述“本次对话显示的沟通倾向”，每个倾向必须引用用户说过的话作为证据，并说明样本有限；禁止心理诊断、人格定型、道德评判或推断现实身份。返回严格 JSON，不要 markdown：{"overview":"过程概览","turningPoint":"关键转折","scores":{"clarity":0,"boundary":0,"emotionalControl":0,"listening":0},"personality":{"summary":"谨慎总结","traits":[{"name":"倾向名","evidence":"逐字复制用户发言中的一段连续原文，不加前缀，不改写","caveat":"限制说明"}]},"strengths":["优势"],"risks":["风险"],"nextSteps":["练习建议"],"suggestedReply":"一条更好的表达","disclaimer":"本报告只基于本次练习，不是心理诊断。"}。四项分数为 0 到 100 的整数；traits 2 到 4 条，其余数组 2 到 4 条。`;
 
-const refereeRolePrompt = `你是“吵架练习室”的裁判智能体，不是争吵方、教练或复盘分析师。你在沉浸模式每完成一轮后判断场景目标是否真正达成。只有对方明确让步、接受用户边界、承诺具体行动，或冲突形成符合本场景胜利条件的可执行收束时，才能判定 won；用户辱骂、音量更大、单方面宣布胜利、对方暂时沉默或敷衍都不算赢。你还要基于用户本轮和本会话的措辞，谨慎估计吵完后的即时心理状态；这是情绪推测，不是心理诊断。返回严格 JSON，不要 markdown：{"status":"ongoing或won","confidence":0,"achievement":"本轮成果，不超过60字","reason":"判定依据，不超过100字","mood":{"label":"例如痛快、松了一口气、赢了却仍不开心、兴奋、疲惫或憋屈","valence":0,"arousal":0,"confidence":0},"resultCopy":"仅在won时填写一段40到100字、第二人称、有画面感但克制的成果文案；ongoing时为空字符串"}。confidence、mood.valence、mood.arousal、mood.confidence 均为整数；valence 范围 -100 到 100，其余范围 0 到 100。`;
+const refereeRolePrompt = `你是“吵架练习室”的裁判智能体，不是争吵方、教练或复盘分析师。你在沉浸模式每完成一轮后判断场景目标是否真正达成。只有对方明确让步、接受用户边界、承诺具体行动，或冲突形成符合本场景胜利条件的可执行收束时，才能判定 won；用户辱骂、音量更大、单方面宣布胜利、对方暂时沉默或敷衍都不算赢。你还要基于用户本轮和本会话的措辞，谨慎估计吵完后的即时心理状态；这是情绪推测，不是心理诊断。返回严格 JSON，不要 markdown：{"status":"ongoing或won","confidence":0,"reason":"判定依据，不超过100字","mood":{"label":"例如痛快、松了一口气、赢了却仍不开心、兴奋、疲惫或憋屈","valence":0,"arousal":0,"confidence":0},"resultCopy":"仅在won时填写一段40到100字、第二人称、有画面感但克制的成果文案；不要写裁判判定、胜利条件、满足条件、你赢了等裁判式结论；ongoing时为空字符串"}。confidence、mood.valence、mood.arousal、mood.confidence 均为整数；valence 范围 -100 到 100，其余范围 0 到 100。`;
 
 const finalAnswerOnlyPrompt = `不要输出思考过程、推理过程、analysis、reasoning、草稿、解释计划或 <think> 标签；只输出用户应该看到的最终内容。`;
 
@@ -481,7 +481,6 @@ function parseVerdict(content) {
   const verdict = {
     status,
     confidence: clamp(result.confidence),
-    achievement: String(result.achievement || "这一轮还没有形成明确收束。").slice(0, 160),
     reason: String(result.reason || "对方还没有明确接受边界或行动请求。").slice(0, 240),
     mood: {
       label: String(result.mood?.label || "仍在较劲").slice(0, 60),
@@ -1116,7 +1115,7 @@ async function createReplay(config, scene, sessionId) {
     const latestVerdict = database.getLatestVerdict(sessionId)?.verdict || {};
     const manifest = {
       scene: { id: scene.id, title: scene.title, kicker: scene.kicker, art: scene.art },
-      outcome: { achievement: latestVerdict.achievement || "这场争吵已经结束。", mood: latestVerdict.mood?.label || "" },
+      outcome: { resultCopy: latestVerdict.resultCopy || "这场争吵已经结束。", mood: latestVerdict.mood?.label || "" },
       timeline
     };
     atomicWriteJson(path.join(stagePath, "manifest.json"), manifest);
@@ -1268,7 +1267,6 @@ function localRefereeVerdict(messages) {
   return {
     status: won ? "won" : "ongoing",
     confidence: won ? 70 : 58,
-    achievement: won ? "对方已经给出明确让步或行动承诺。" : "你已经表达了立场，但对方还没有给出明确让步。",
     reason: won ? "对方最新回复包含可观察的接受或承诺。" : "目前仍缺少对方接受边界或承诺行动的证据。",
     mood: { label: won ? "松了一口气" : "仍在较劲", valence: won ? 45 : -12, arousal: won ? 42 : 62, confidence: 45 },
     resultCopy: won ? "你把这场争吵推到了一个真实的结果：对方终于给出了回应。赢下来的不只是最后一句，而是那条终于被看见的边界。" : ""

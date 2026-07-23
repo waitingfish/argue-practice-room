@@ -9,29 +9,33 @@
   <body>
     <main class="replay-page" id="replayPage">
       <div class="replay-backdrop" aria-hidden="true"></div>
+      <section class="replay-intro" id="replayIntro">
+        <h1>有人把一场架，留在了这里。</h1>
+        <button id="replayEnter" type="button" disabled>轻触，回到那一刻</button>
+      </section>
       <header class="replay-header">
         <a href="/">回到首页</a>
         <button id="shareReplay" type="button">分享</button>
       </header>
-      <section class="replay-title">
+      <section class="replay-title" aria-live="polite">
         <p id="replayKicker">对话回放</p>
         <h1 id="replayTitle">正在打开这场对话…</h1>
         <p id="replayOutcome"></p>
       </section>
       <section class="replay-stage" aria-live="polite">
-        <div class="replay-timeline" id="replayTimeline"></div>
+        <article class="replay-current" id="replayCurrent">
+          <span id="replaySpeaker"></span>
+          <p id="replayText"></p>
+        </article>
       </section>
-      <footer class="replay-controls">
-        <button class="replay-play" id="replayPlay" type="button" disabled>开始回放</button>
-        <label for="replaySpeed">速度</label>
-        <select id="replaySpeed">
-          <option value="0.75">0.75×</option>
-          <option value="1" selected>1×</option>
-          <option value="1.25">1.25×</option>
-          <option value="1.5">1.5×</option>
-        </select>
-        <span id="replayProgress">0 / 0</span>
-      </footer>
+      <dialog class="replay-ended-dialog" id="replayEndedDialog" aria-labelledby="replayEndedTitle">
+        <p>这场架已经放完了</p>
+        <h2 id="replayEndedTitle">要不要也来吵一架？</h2>
+        <div>
+          <button class="primary" id="startArgue" type="button">我也来吵一架</button>
+          <button id="replayAgain" type="button">再听一次</button>
+        </div>
+      </dialog>
     </main>
     <script src="/replay.js"></script>
   </body>

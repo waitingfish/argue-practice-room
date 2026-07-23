@@ -8,6 +8,8 @@ const trainingEndButton = document.querySelector("#trainingEndButton");
 const reviewButton = document.querySelector("#reviewButton");
 const reviewTooltip = document.querySelector("#reviewTooltip");
 const voiceEndButton = document.querySelector("#voiceEndButton");
+const immersivePrelude = document.querySelector("#immersivePrelude");
+const immersiveBegin = document.querySelector("#immersiveBegin");
 const modelState = document.querySelector("#modelState");
 const analysisLoading = document.querySelector("#analysisLoading");
 const analysisReport = document.querySelector("#analysisReport");
@@ -18,6 +20,7 @@ const voiceHint = document.querySelector("#voiceHint");
 const speechPlayer = document.querySelector("#speechPlayer");
 const argumentOutcome = document.querySelector("#argumentOutcome");
 const outcomeDialog = document.querySelector("#outcomeDialog");
+const outcomeContinue = document.querySelector("#outcomeContinue");
 const outcomeSaveReplay = document.querySelector("#outcomeSaveReplay");
 const outcomeSaveStatus = document.querySelector("#outcomeSaveStatus");
 
@@ -37,10 +40,26 @@ let recordedChunks = [];
 let activeAudioUrl = "";
 let speechAudioContext = null;
 let scheduledSpeechTime = 0;
+let voiceMonitorContext = null;
+let voiceMonitorSource = null;
+let voiceAnalyser = null;
+let voiceSamples = null;
+let voiceMonitorFrame = 0;
+let autoListening = false;
+let autoRecording = false;
+let autoRecordingStarting = false;
+let autoSpeechStartedAt = 0;
+let autoLastVoiceAt = 0;
 let argumentEnded = false;
-let outcomeDialogTimer = 0;
 let endingImmersive = false;
+let immersiveStartPending = false;
+let immersivePreludeTimer = 0;
 const reviewRequiredTurns = 5;
+const autoVoiceStartLevel = 0.035;
+const autoVoiceStopLevel = 0.018;
+const autoVoiceSilenceMs = 1100;
+const autoVoiceMinSpeechMs = 450;
+const autoVoiceIdleReminderMs = 18000;
 
 function sessionStorageKey(mode = currentMode) {
   return `argue-practice-session:${slug}:${mode}`;
@@ -119,8 +138,16 @@ function setVoiceState(state, status, hint = "") {
   voiceOrbit.dataset.state = state;
   voiceStatus.textContent = status;
   if (hint) voiceHint.textContent = hint;
-  recordButton.disabled = ["thinking", "speaking", "transcribing"].includes(state);
-  recordButton.setAttribute("aria-label", state === "recording" ? "结束录音" : "开始录音");
+  if (recordButton) {
+    recordButton.disabled = ["thinking", "speaking", "transcribing"].includes(state);
+    recordButton.setAttribute("aria-label", state === "recording" ? "结束录音" : "开始录音");
+  }
+  if (!["listening", "recording"].includes(state)) setVoiceLevel(0);
+}
+
+function setVoiceLevel(level) {
+  const normalized = Math.max(0, Math.min(1, level));
+  voiceOrbit.style.setProperty("--voice-level", normalized.toFixed(3));
 }
 
 async function readStream(response, onText) {
@@ -150,6 +177,19 @@ async function loadSessionState() {
   updateCoachToggle();
   updateReviewButton();
   return state;
+}
+
+function canAutoListen() {
+  return currentMode === "immersive" && activeSession?.id && page.dataset.phase === "arena" && page.dataset.immersiveStarted === "true" && !busy && !argumentEnded && !endingImmersive;
+}
+
+function showImmersivePrelude() {
+  clearTimeout(immersivePreludeTimer);
+  page.dataset.immersiveStarted = "false";
+  immersivePrelude.hidden = false;
+  immersivePrelude.classList.remove("leaving");
+  immersiveBegin.disabled = false;
+  setVoiceState("idle", "准备开始", "点击后对方会先开口");
 }
 
 async function createSession() {
@@ -204,22 +244,19 @@ async function judgeImmersiveTurn() {
 function showArgumentOutcome(verdict) {
   if (!verdict || verdict.status !== "won") return;
   argumentEnded = true;
+  stopAutoListening();
   window.speechSynthesis?.cancel();
   if (mediaRecorder?.state === "recording") mediaRecorder.stop();
   microphoneStream?.getTracks().forEach((track) => track.stop());
   microphoneStream = null;
-  document.querySelector("#outcomeTitle").textContent = verdict.achievement || "你赢了。";
-  document.querySelector("#outcomeCopy").textContent = verdict.resultCopy;
+  document.querySelector("#outcomeCopy").textContent = verdict.resultCopy || "这场争吵终于有了结果。你把真正想守住的东西说清楚了，也让对方给出了回应。";
   document.querySelector("#outcomeMood").textContent = verdict.mood?.label || "终于松了一口气";
   argumentOutcome.hidden = false;
   page.dataset.argumentEnded = "true";
   setVoiceState("ended", "裁判判定：这场争吵结束了", "你已经不需要继续回应");
-  recordButton.disabled = true;
+  if (recordButton) recordButton.disabled = true;
   updateReviewButton();
-  clearTimeout(outcomeDialogTimer);
-  outcomeDialogTimer = window.setTimeout(() => {
-    if (!outcomeDialog.open && page.dataset.phase === "arena") outcomeDialog.showModal();
-  }, 1400);
+  outcomeContinue.disabled = false;
 }
 
 async function streamAgent(action, role, payload) {
@@ -365,7 +402,8 @@ async function speakRemoteAudio(text, requestId = "") {
 }
 
 async function speakText(text, requestId = "") {
-  setVoiceState("speaking", "争吵方正在说话…", "听完后，点麦克风回应");
+  stopAutoListening();
+  setVoiceState("speaking", "争吵方正在说话…", "听完后可以直接开口回应");
   try {
     if (!serviceStatus.immersiveConfigured) {
       await browserSpeak(text);
@@ -376,7 +414,7 @@ async function speakText(text, requestId = "") {
     voiceStatus.textContent = `远程语音失败，使用浏览器声音：${error.message}`;
     await browserSpeak(text);
   } finally {
-    setVoiceState("idle", "轮到你了", "点一下开始说，再点一下结束");
+    setVoiceState("idle", "轮到你了", "直接说话，系统会自动发送");
   }
 }
 
@@ -392,8 +430,112 @@ async function ensureMicrophone() {
   return microphoneStream;
 }
 
-async function startRecording() {
+async function ensureVoiceAnalyser(stream) {
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextClass) throw new Error("当前浏览器不支持自动监听，请手动点击麦克风");
+  if (!voiceMonitorContext || voiceMonitorContext.state === "closed") {
+    voiceMonitorContext = new AudioContextClass();
+    voiceMonitorSource = null;
+    voiceAnalyser = null;
+  }
+  if (!voiceAnalyser || !voiceMonitorSource) {
+    voiceMonitorSource = voiceMonitorContext.createMediaStreamSource(stream);
+    voiceAnalyser = voiceMonitorContext.createAnalyser();
+    voiceAnalyser.fftSize = 1024;
+    voiceAnalyser.smoothingTimeConstant = 0.18;
+    voiceMonitorSource.connect(voiceAnalyser);
+    voiceSamples = new Uint8Array(voiceAnalyser.fftSize);
+  }
+  await voiceMonitorContext.resume().catch(() => {});
+  return voiceAnalyser;
+}
+
+function currentVoiceLevel() {
+  if (!voiceAnalyser || !voiceSamples) return 0;
+  voiceAnalyser.getByteTimeDomainData(voiceSamples);
+  let sum = 0;
+  for (const sample of voiceSamples) {
+    const value = (sample - 128) / 128;
+    sum += value * value;
+  }
+  return Math.sqrt(sum / voiceSamples.length);
+}
+
+function stopAutoListening() {
+  autoListening = false;
+  autoRecording = false;
+  autoRecordingStarting = false;
+  if (voiceMonitorFrame) cancelAnimationFrame(voiceMonitorFrame);
+  voiceMonitorFrame = 0;
+  setVoiceLevel(0);
+}
+
+function queueAutoListening(delay = 320) {
+  window.setTimeout(() => {
+    if (canAutoListen()) startAutoListening();
+  }, delay);
+}
+
+async function beginAutoRecording() {
+  if (autoRecording || autoRecordingStarting || mediaRecorder?.state === "recording") return;
+  autoRecordingStarting = true;
+  autoSpeechStartedAt = performance.now();
+  autoLastVoiceAt = autoSpeechStartedAt;
   try {
+    await startRecording({ automatic: true });
+    autoRecording = mediaRecorder?.state === "recording";
+  } finally {
+    autoRecordingStarting = false;
+  }
+}
+
+async function startAutoListening() {
+  if (!canAutoListen() || autoListening || mediaRecorder?.state === "recording") return;
+  try {
+    const stream = await ensureMicrophone();
+    await ensureVoiceAnalyser(stream);
+    autoListening = true;
+    autoRecording = false;
+    autoRecordingStarting = false;
+    let lastReminderAt = performance.now();
+    setVoiceState("listening", "轮到你了，我在听…", "直接说话；停顿后会自动发送");
+
+    const tick = () => {
+      if (!autoListening) return;
+      if (!canAutoListen() && mediaRecorder?.state !== "recording") {
+        stopAutoListening();
+        return;
+      }
+
+      const now = performance.now();
+      const level = currentVoiceLevel();
+      setVoiceLevel(Math.min(1, level / autoVoiceStartLevel));
+      if (mediaRecorder?.state === "recording") {
+        if (level >= autoVoiceStopLevel) autoLastVoiceAt = now;
+        if (now - autoSpeechStartedAt >= autoVoiceMinSpeechMs && now - autoLastVoiceAt >= autoVoiceSilenceMs) {
+          stopAutoListening();
+          stopRecording();
+          return;
+        }
+      } else if (level >= autoVoiceStartLevel) {
+        beginAutoRecording();
+      } else if (now - lastReminderAt >= autoVoiceIdleReminderMs) {
+        lastReminderAt = now;
+        setVoiceState("listening", "我还在听…", "开口后会自动录音，停顿后自动发送");
+      }
+
+      voiceMonitorFrame = requestAnimationFrame(tick);
+    };
+    voiceMonitorFrame = requestAnimationFrame(tick);
+  } catch (error) {
+    stopAutoListening();
+    setVoiceState("idle", "自动监听不可用", `${error.message}；请检查浏览器麦克风权限`);
+  }
+}
+
+async function startRecording({ automatic = false } = {}) {
+  try {
+    if (automatic && !canAutoListen()) return;
     const stream = await ensureMicrophone();
     recordedChunks = [];
     const mimeType = preferredRecordingType();
@@ -401,7 +543,7 @@ async function startRecording() {
     mediaRecorder.ondataavailable = (event) => { if (event.data.size) recordedChunks.push(event.data); };
     mediaRecorder.onstop = processRecording;
     mediaRecorder.start(250);
-    setVoiceState("recording", "正在听你说…", "说完后再点一下");
+    setVoiceState("recording", "正在听你说…", automatic ? "停顿后会自动发送" : "说完后再点一下");
   } catch (error) {
     setVoiceState("error", `无法开始录音：${error.message}`, "请允许麦克风权限后重试");
   }
@@ -409,6 +551,7 @@ async function startRecording() {
 
 function stopRecording() {
   if (mediaRecorder?.state === "recording") {
+    stopAutoListening();
     mediaRecorder.stop();
     setVoiceState("transcribing", "正在识别你说的话…", "录音会临时与本次会话关联");
   }
@@ -462,6 +605,7 @@ async function convertRecordingToWav(recording) {
 
 async function processRecording() {
   if (argumentEnded) return;
+  stopAutoListening();
   busy = true;
   updateReviewButton();
   const mimeType = mediaRecorder.mimeType || recordedChunks[0]?.type || "audio/webm";
@@ -497,6 +641,7 @@ async function processRecording() {
   } finally {
     busy = false;
     updateReviewButton();
+    if (currentMode === "immersive" && !argumentEnded && page.dataset.phase === "arena") queueAutoListening();
   }
 }
 
@@ -549,7 +694,6 @@ async function openReview() {
   if (!((currentMode === "training" && userTurnCount() >= reviewRequiredTurns) || (currentMode === "immersive" && argumentEnded)) || busy || analysisBusy) return;
   window.speechSynthesis?.cancel();
   speechPlayer.pause();
-  clearTimeout(outcomeDialogTimer);
   if (outcomeDialog.open) outcomeDialog.close();
   page.dataset.phase = "review";
   const currentVersion = sessionMessages.filter((message) => message.role !== "coach").length;
@@ -578,18 +722,20 @@ async function startMode(mode) {
   currentMode = mode;
   page.dataset.mode = mode;
   page.dataset.phase = "arena";
+  delete page.dataset.immersiveStarted;
   busy = true;
   try {
     const state = await restoreOrCreateSession();
     setReadyState(serviceStatus.model ? `${mode === "immersive" ? "争吵方与裁判" : "三个智能体"}已连接 · ${serviceStatus.model} · 对话流式` : "");
     if (mode === "immersive" && state?.status === "ended" && state.latestVerdict?.verdict?.status === "won") {
+      page.dataset.immersiveStarted = "true";
+      immersivePrelude.hidden = true;
       showArgumentOutcome(state.latestVerdict.verdict);
       return;
     }
     if (mode === "training") input.focus();
     else {
-      const lastOpponent = [...sessionMessages].reverse().find((message) => message.role === "opponent");
-      await speakText(lastOpponent?.content || scene.opponent, lastOpponent?.requestId || "opening");
+      showImmersivePrelude();
     }
   } catch (error) {
     if (mode === "training") modelState.textContent = `会话初始化失败：${error.message}`;
@@ -597,15 +743,49 @@ async function startMode(mode) {
   } finally {
     busy = false;
     updateReviewButton();
+    if (mode === "immersive" && !argumentEnded && page.dataset.phase === "arena") queueAutoListening();
+  }
+}
+
+async function beginImmersiveDialogue() {
+  if (busy || currentMode !== "immersive" || !activeSession || argumentEnded || immersiveStartPending) return;
+  immersiveStartPending = true;
+  busy = true;
+  immersiveBegin.disabled = true;
+  page.dataset.immersiveStarted = "true";
+  immersivePrelude.classList.add("leaving");
+  try {
+    clearTimeout(immersivePreludeTimer);
+    immersivePreludeTimer = window.setTimeout(() => { immersivePrelude.hidden = true; }, 620);
+    const lastOpponent = [...sessionMessages].reverse().find((message) => message.role === "opponent");
+    await speakText(lastOpponent?.content || scene.opponent, lastOpponent?.requestId || "opening");
+  } catch (error) {
+    clearTimeout(immersivePreludeTimer);
+    immersivePrelude.hidden = false;
+    immersivePrelude.classList.remove("leaving");
+    page.dataset.immersiveStarted = "false";
+    setVoiceState("error", `沉浸模式启动失败：${error.message}`, "可以稍后再试");
+  } finally {
+    busy = false;
+    immersiveStartPending = false;
+    updateReviewButton();
+    if (currentMode === "immersive" && !argumentEnded && page.dataset.phase === "arena") queueAutoListening();
   }
 }
 
 function stopLocalMedia() {
+  stopAutoListening();
   window.speechSynthesis?.cancel();
   speechPlayer.pause();
   if (mediaRecorder?.state === "recording") mediaRecorder.stop();
   microphoneStream?.getTracks().forEach((track) => track.stop());
   microphoneStream = null;
+  voiceMonitorSource?.disconnect();
+  voiceMonitorSource = null;
+  voiceAnalyser = null;
+  voiceSamples = null;
+  voiceMonitorContext?.close().catch(() => {});
+  voiceMonitorContext = null;
   if (activeAudioUrl) {
     URL.revokeObjectURL(activeAudioUrl);
     activeAudioUrl = "";
@@ -667,6 +847,7 @@ async function load() {
 
 document.querySelector("#continueScene").addEventListener("click", () => { page.dataset.phase = "mode"; });
 document.querySelectorAll("[data-mode-choice]").forEach((button) => button.addEventListener("click", () => startMode(button.dataset.modeChoice)));
+immersiveBegin.addEventListener("click", beginImmersiveDialogue);
 
 coachToggle.addEventListener("click", async () => {
   if (busy || currentMode !== "training") return;
@@ -703,13 +884,21 @@ document.querySelector("#restartPractice").addEventListener("click", () => {
   location.reload();
 });
 
-recordButton.addEventListener("click", () => {
+recordButton?.addEventListener("click", () => {
   if (argumentEnded) return;
   if (mediaRecorder?.state === "recording") stopRecording();
-  else if (!busy) startRecording();
+  else if (!busy) {
+    stopAutoListening();
+    startRecording();
+  }
 });
 
 document.querySelector("#outcomeLeave").addEventListener("click", () => finishImmersiveSession("/"));
+outcomeContinue.addEventListener("click", () => {
+  if (page.dataset.phase !== "arena" || outcomeDialog.open) return;
+  outcomeContinue.disabled = true;
+  outcomeDialog.showModal();
+});
 document.querySelector("#outcomeReview").addEventListener("click", openReview);
 
 outcomeSaveReplay.addEventListener("click", async () => {

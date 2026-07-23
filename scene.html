@@ -29,7 +29,7 @@
           <button class="mode-card" type="button" data-mode-choice="immersive">
             <span class="mode-icon microphone-icon" aria-hidden="true">●</span>
             <strong>沉浸模式</strong>
-            <small>语音输入 · 对方语音回应 · 一轮一轮说</small>
+            <small>对方先说 · 你直接开口 · 自动识别发送</small>
           </button>
         </div>
         <p class="mode-note" id="modeNote">两种模式分别保存会话，不会互相串线。</p>
@@ -43,6 +43,9 @@
           <h1 id="arenaTitle"></h1>
           <p id="arenaIntro"></p>
         </div>
+        <section class="immersive-prelude" id="immersivePrelude" hidden aria-live="polite">
+          <button id="immersiveBegin" type="button">深呼吸，开口</button>
+        </section>
         <section class="conversation" id="conversation" aria-live="polite"></section>
         <form class="speak-box text-speak-box" id="replyForm">
           <div class="speak-head">
@@ -68,16 +71,15 @@
           </div>
           <div class="voice-orbit" id="voiceOrbit" data-state="idle">
             <div class="voice-bars" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
-            <button class="record-button" id="recordButton" type="button" aria-label="开始录音"><span></span></button>
+            <div class="voice-core" aria-hidden="true"><span></span></div>
           </div>
-          <p class="voice-hint" id="voiceHint">点一下开始说，再点一下结束</p>
+          <p class="voice-hint" id="voiceHint">对方说完后直接开口，停顿后会自动发送</p>
           <audio id="speechPlayer" preload="auto"></audio>
         </section>
         <section class="argument-outcome" id="argumentOutcome" hidden aria-live="assertive">
-          <p>裁判判定 · 这场争吵结束了</p>
-          <h2 id="outcomeTitle">你赢了。</h2>
           <p id="outcomeCopy"></p>
           <div class="outcome-mood"><span>吵完这一刻</span><strong id="outcomeMood"></strong></div>
+          <button id="outcomeContinue" type="button">继续</button>
         </section>
       </section>
 
