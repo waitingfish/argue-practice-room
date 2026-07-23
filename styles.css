@@ -375,3 +375,52 @@ body{background:#050505}
     animation:none!important;
   }
 }
+
+/* Preset scene controls */
+.experience[data-view="lobby"] .scene-carousel{
+  align-self:center;
+  display:grid;
+  grid-template-columns:44px minmax(0,1fr) 44px;
+  align-items:center;
+  gap:clamp(12px,1.6vw,22px);
+  width:min(100%,1640px);
+  min-height:0;
+  margin:0 auto;
+}
+.scene-nav{
+  width:44px;
+  height:44px;
+  border:1px solid rgba(247,241,229,.26);
+  border-radius:50%;
+  background:rgba(4,4,4,.38);
+  color:var(--ink);
+  box-shadow:0 12px 26px rgba(0,0,0,.36);
+  backdrop-filter:blur(8px);
+  font:30px/1 ui-sans-serif,system-ui,sans-serif;
+  cursor:pointer;
+  transition:transform .18s ease,border-color .18s ease,color .18s ease,opacity .18s ease;
+}
+.scene-nav:hover,
+.scene-nav:focus-visible{
+  border-color:var(--accent);
+  color:var(--accent);
+  outline:0;
+  transform:translateY(-2px);
+}
+.scene-nav:disabled{
+  opacity:.28;
+  cursor:default;
+  transform:none;
+}
+@media(max-width:760px){
+  .experience[data-view="lobby"] .scene-carousel{
+    grid-template-columns:36px minmax(0,1fr) 36px;
+    gap:8px;
+    width:100%;
+  }
+  .scene-nav{
+    width:36px;
+    height:36px;
+    font-size:24px;
+  }
+}

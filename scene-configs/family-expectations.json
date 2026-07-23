@@ -1,5 +1,5 @@
 {
-  "id": "scene-4ffc5ab1-7312-4a6c-9c43-e0c01622c5bc",
+  "id": "family-expectations",
   "source": "built-in",
   "title": "期望的重量",
   "kicker": "当爱变成压力",
@@ -19,7 +19,7 @@
   "artPrompt": "Retain the same cozy family living room environment from the thumbnail, with a wooden dining table, chairs, and soft lighting, viewed from a slightly low angle. Keep the right side open for character placement. Remove all people. Ensure the atmosphere feels intimate yet tense.",
   "thumbnailArtPrompt": "A cozy family living room with a wooden dining table, chairs, and soft lighting. A middle-aged woman (the mother) stands by the table, holding a report card, looking stern and disappointed. The composition is suitable for a horizontal thumbnail, focusing on the conflict moment. No text. Style: Japanese retro hand-drawn manga manuscript sketch from the 1990s, monochrome black-and-white, high contrast, warm aged paper scan, thick outlines, rough ink lines, pencil marks, loose strokes, charcoal shading, cross-hatching, raw sketch texture, simple background.",
   "opponentArtPrompt": "A middle-aged woman in her fifties, mother figure, standing pose, expression stern and disappointed, short hair, wearing a casual home outfit, holding a report card, facing left. Black-and-white hand-drawn manga sketch style with paper cutout edges. Identity, clothing, and props must match the thumbnail. Gender: female. Three-quarter or full body view.. Japanese retro hand-drawn manga manuscript sketch from the 1990s, like an original comic artist draft scanned from an old sketchbook, monochrome black-and-white low-saturation image, high contrast, warm nostalgic aged off-white paper scan, thick handmade black outlines, rough uneven ink lines, visible pencil construction marks and corrections, loose graphite strokes, charcoal shading, dense cross-hatching for shadows, raw sketch texture, simple background only. No color, no vivid yellow background, no solid yellow fill background, no 3D effect, no glossy high-definition anime rendering, no modern digital painting style, no smooth clean AI linework, no complex background, no overly polished commercial anime character design. Visible off-white paper-cut silhouette with irregular paper edge, low-detail expressive face, not photorealist",
-  "art": "assets/scene-4ffc5ab1-7312-4a6c-9c43-e0c01622c5bc/immersive-bg.png",
-  "thumbnailArt": "assets/scene-4ffc5ab1-7312-4a6c-9c43-e0c01622c5bc/home-card.png",
-  "opponentArt": "assets/scene-4ffc5ab1-7312-4a6c-9c43-e0c01622c5bc/opponent-cutout.png"
+  "art": "assets/family-expectations/immersive-bg.png",
+  "thumbnailArt": "assets/family-expectations/home-card.png",
+  "opponentArt": "assets/family-expectations/opponent-cutout.png"
 }

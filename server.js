@@ -757,8 +757,8 @@ function normalizeSceneVoice(scene) {
 
 const sceneWriterSystemPrompt = `你是互动叙事场景编剧。可以在内部进行必要推理，但最终回复只能包含一个严格 JSON 对象，不要 markdown，不要解释，不要把思考过程写进结果：{title,kicker,intro,introLines:[三句中文],opponent,opponentPrompt,coachPrompt,analysisPrompt,winCondition,refereePrompt,opponentGender,artPrompt,thumbnailArtPrompt,opponentArtPrompt}。
 文案简体中文，克制、具体、非暴力；opponent 是对方的第一句，只能是对用户说的台词，不能包含括号动作、旁白、角色名或舞台说明；opponentGender 只能是 male、female 或 unspecified，必须遵循用户指定的对方性别；opponentPrompt 描述争吵方的人设、关系身份、说话方式和施压/防御方式，并明确对方性别；coachPrompt 描述实时帮忙专家应该重点教什么；analysisPrompt 描述复盘分析师在这个场景中要重点观察的表达模式，不能做心理诊断；winCondition 描述必须由对方言行可观察确认的场景胜利条件，不能把辱骂或压制当胜利；refereePrompt 描述裁判在本场景应重点检查的让步、边界或行动承诺。
-三类图片 prompt 必须都是英文，并描述同一地点、同一个对方角色和同一组服装道具；服务端会先用 thumbnailArtPrompt 生成母图，再把母图作为输入派生另外两张图。thumbnailArtPrompt 是视觉母图：完整表现环境、单个对方角色和冲突瞬间，构图适合首页横向小图，不能有文字；artPrompt 是从母图派生沉浸背景的编辑要求，描述要保留的同一环境、视角和关键道具，移除所有人物，并在右侧预留角色空间；opponentArtPrompt 是从母图提取同一对方角色的编辑要求，只描述该角色的身份、性别、年龄段、姿态、表情、发型、服装、道具、朝向和黑白手绘剪贴/纸片边缘风格，人物身份、服装与道具必须和 thumbnailArtPrompt 完全一致，性别必须与 opponentGender 一致，三分之二或全身。
-三张图统一为 ${imageStyleGuard} opponentArtPrompt 不要描述背景、透明背景、green screen、chroma key、background removal，也不要写 no text/logo/watermark 等固定限制；这些限制由服务端代码统一追加。`;
+三类图片 prompt 必须都是英文，并描述同一地点、同一个对方角色和同一组服装道具；服务端会先用 thumbnailArtPrompt 生成母图，再把母图作为输入派生另外两张图。thumbnailArtPrompt 是视觉母图：完整表现环境、单个对方角色和冲突瞬间，构图适合首页横向小图，必须是一张不规则撕纸边缘的横向画片，画面内容都在旧纸片内部，不能有文字；artPrompt 是从母图派生沉浸背景的编辑要求，描述要保留的同一环境、视角和关键道具，移除所有人物，并在右侧预留角色空间；opponentArtPrompt 是从母图提取同一对方角色的编辑要求，只描述该角色的身份、性别、年龄段、姿态、表情、发型、服装、道具、朝向和黑白手绘剪贴/纸片边缘风格，人物身份、服装与道具必须和 thumbnailArtPrompt 完全一致，性别必须与 opponentGender 一致，三分之二或全身。
+三张图统一为 ${imageStyleGuard} thumbnailArtPrompt 和 opponentArtPrompt 不要描述透明背景、green screen、chroma key、background removal，也不要写 no text/logo/watermark 等固定限制；这些限制由服务端代码统一追加。`;
 
 async function createSceneText(config, prompt, opponentGender) {
   const preferredGender = ["male", "female"].includes(opponentGender) ? opponentGender : "unspecified";
@@ -789,6 +789,32 @@ function readSceneConfig(id) {
   const filePath = fs.existsSync(primary) ? primary : fs.existsSync(published) ? published : "";
   if (!filePath) return null;
   return normalizeSceneVoice(JSON.parse(fs.readFileSync(filePath, "utf8")));
+}
+
+const builtInSceneOrder = ["restaurant-smoking", "phone-night", "roommate-gaming"];
+
+function listBuiltInScenes() {
+  if (!fs.existsSync(sceneConfigDir)) return [];
+  const scenes = fs.readdirSync(sceneConfigDir)
+    .filter((name) => name.endsWith(".json"))
+    .map((name) => path.basename(name, ".json"))
+    .map((id) => readSceneConfig(id))
+    .filter((scene) => scene && scene.source !== "generated")
+    .map((scene) => ({
+      id: scene.id,
+      title: scene.title,
+      kicker: scene.kicker,
+      intro: scene.intro,
+      art: scene.thumbnailArt || scene.art,
+      url: `/scene/${scene.id}`
+    }));
+  return scenes.sort((left, right) => {
+    const leftIndex = builtInSceneOrder.indexOf(left.id);
+    const rightIndex = builtInSceneOrder.indexOf(right.id);
+    const leftRank = leftIndex === -1 ? Number.MAX_SAFE_INTEGER : leftIndex;
+    const rightRank = rightIndex === -1 ? Number.MAX_SAFE_INTEGER : rightIndex;
+    return leftRank - rightRank || left.title.localeCompare(right.title, "zh-CN");
+  });
 }
 
 function detectImageFormat(buffer) {
@@ -864,10 +890,12 @@ function cutoutImagePrompt(prompt) {
   return [subjectPrompt, chromaKeyCutoutPrompt].filter(Boolean).join("\n\n");
 }
 
-function masterImagePrompt(prompt) {
+function thumbnailImagePrompt(prompt) {
   return `${String(prompt || "").trim().slice(0, 900)}
 
-This image is the visual master reference for one coherent three-image asset set. Show exactly one opponent character and the complete conflict environment. Establish a distinctive but simple character identity, hairstyle, clothing silhouette, prop, room geometry, viewpoint, and manuscript line language that can be preserved in later edits. ${imageStyleGuard} No photorealism, no text, no logo, no watermark.`.slice(0, 1800);
+This image is the visual master reference for one coherent three-image asset set. Show exactly one opponent character and the complete conflict environment. The whole illustration must live on one large horizontal torn piece of aged off-white paper with ragged, uneven, fibrous, hand-torn edges; the paper silhouette should be organic, not rectangular, with generous padding around the paper edge. Establish a distinctive but simple character identity, hairstyle, clothing silhouette, prop, room geometry, viewpoint, and manuscript line language that can be preserved in later edits. The artwork and paper must stay monochrome or warm off-white only. Exception: outside the torn paper only, use the flat #00ff00 technical background required below so the server can remove it. ${imageStyleGuard} No photorealism, no text, no logo, no watermark.
+
+${chromaKeyCutoutPrompt}`.slice(0, 2400);
 }
 
 function backgroundEditPrompt(prompt) {
@@ -894,7 +922,7 @@ function saveImageDebugArtifact(stagePath, baseName, attempt, prompt, image) {
   durableWriteFile(path.join(debugPath, `${prefix}-prompt.txt`), Buffer.from(String(prompt || ""), "utf8"));
 }
 
-async function makeCutoutTransparent(buffer) {
+async function makeCutoutTransparent(buffer, options = {}) {
   const image = sharp(buffer).ensureAlpha();
   const { data, info } = await image.raw().toBuffer({ resolveWithObject: true });
   const { width, height, channels } = info;
@@ -949,7 +977,8 @@ async function makeCutoutTransparent(buffer) {
   }
 
   const removedCount = background.reduce((sum, value) => sum + value, 0);
-  if (removedCount < total * 0.05) throw new Error("人物图没有检测到稳定的 #00ff00 绿幕背景");
+  const label = options.label || "图片";
+  if (removedCount < total * 0.05) throw new Error(`${label}没有检测到稳定的 #00ff00 绿幕背景`);
 
   function touchesBackground(index) {
     const x = index % width;
@@ -1004,7 +1033,8 @@ async function makeCutoutTransparent(buffer) {
     data[offset + 3] = nextAlpha;
   }
 
-  return sharp(data, { raw: { width, height, channels } }).greyscale().png().toBuffer();
+  const output = sharp(data, { raw: { width, height, channels } });
+  return (options.preserveColor ? output : output.greyscale()).png().toBuffer();
 }
 
 function validateSceneDefinition(scene) {
@@ -1031,7 +1061,7 @@ async function ensureSceneImage(stagePath, jobId, scene, promptKey, baseName, si
     const stagedBuffer = fs.readFileSync(imagePath);
     const stats = await sharp(stagedBuffer).ensureAlpha().stats();
     if (stats.channels[3]?.min < 255) return imagePath;
-    const converted = await makeCutoutTransparent(stagedBuffer);
+    const converted = await makeCutoutTransparent(stagedBuffer, options.cutout || {});
     const transparentPath = path.join(stagePath, `${baseName}.png`);
     durableWriteFile(transparentPath, converted);
     if (imagePath !== transparentPath) fs.unlinkSync(imagePath);
@@ -1049,7 +1079,7 @@ async function ensureSceneImage(stagePath, jobId, scene, promptKey, baseName, si
         : await createSceneImage(config, imagePrompt, size);
       saveImageDebugArtifact(stagePath, baseName, attempt, imagePrompt, image);
       if (options.transparentCutout) {
-        const converted = await makeCutoutTransparent(image.buffer);
+        const converted = await makeCutoutTransparent(image.buffer, options.cutout || {});
         imagePath = path.join(stagePath, `${baseName}.png`);
         durableWriteFile(imagePath, converted);
         durableWriteFile(path.join(stagePath, "debug-images", `${baseName}-attempt-${attempt}-processed.png`), converted);
@@ -1095,7 +1125,7 @@ async function runSceneJob(id) {
       atomicWriteJson(draftPath, scene);
     }
 
-    const thumbnailPath = await ensureSceneImage(stagePath, id, scene, "thumbnailArtPrompt", "thumbnail", "1536x1024", 42, "文案已完成，正在生成视觉母图", { promptBuilder: masterImagePrompt });
+    const thumbnailPath = await ensureSceneImage(stagePath, id, scene, "thumbnailArtPrompt", "thumbnail", "1536x1024", 42, "文案已完成，正在生成撕纸小图", { promptBuilder: thumbnailImagePrompt, transparentCutout: true, cutout: { label: "首页小图", preserveColor: true } });
     const backgroundPath = await ensureSceneImage(stagePath, id, scene, "artPrompt", "background", "1536x1024", 60, "正在从母图派生沉浸背景", { referenceImagePath: thumbnailPath, promptBuilder: backgroundEditPrompt });
     const opponentPath = await ensureSceneImage(stagePath, id, scene, "opponentArtPrompt", "opponent", "1024x1536", 76, "正在从母图派生争吵人形象", { referenceImagePath: thumbnailPath, promptBuilder: opponentEditPrompt, transparentCutout: true });
 
@@ -1947,6 +1977,9 @@ async function handleApi(request, response, pathname) {
       logModelError("语音合成测试", error, { endpoint: speechEndpoint(testConfig), model: testConfig.speechModel, voice: testConfig.speechVoice, mode: testConfig.speechMode });
       return sendJson(response, 502, { error: error.message });
     }
+  }
+  if (pathname === "/api/scenes" && request.method === "GET") {
+    return sendJson(response, 200, { scenes: listBuiltInScenes() });
   }
   if (pathname.startsWith("/api/scenes/") && request.method === "GET") {
     const id = pathname.slice("/api/scenes/".length);

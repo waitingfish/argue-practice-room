@@ -1,4 +1,12 @@
 const createdScenesKey = "argue-created-scenes";
+const fallbackPresetScenes = [
+  { id: "restaurant-smoking", title: "餐厅。邻座刚点起一根烟。", art: "assets/restaurant-smoking/home-card.png", url: "/scene/restaurant-smoking" },
+  { id: "phone-night", title: "深夜。你准备找她沟通。", art: "assets/sketch-default/home-card.png", url: "/scene/phone-night" },
+  { id: "roommate-gaming", title: "合租房。室友还在打游戏。", art: "assets/roommate-gaming/home-card.png", url: "/scene/roommate-gaming" }
+];
+const presetSlotClasses = ["left-scene", "center-scene", "right-scene"];
+let presetScenes = fallbackPresetScenes;
+let presetStartIndex = 0;
 
 function readCreatedScenes() {
   try {
@@ -59,6 +67,87 @@ function renderScenePick(scene, isGenerated) {
   return link;
 }
 
+function presetSceneTitle(scene) {
+  return String(scene.kicker || scene.title || scene.intro || "预制场景").replace(/。$/, "");
+}
+
+function renderPresetScene(scene, slotIndex = 0) {
+  const link = document.createElement("a");
+  link.className = `hero-scene default-scene ${presetSlotClasses[slotIndex] || ""}`.trim();
+  link.href = scene.url || `/scene/${scene.id}`;
+
+  const image = document.createElement("img");
+  image.src = sceneArtUrl(scene.art);
+  image.alt = scene.title || "";
+
+  const title = document.createElement("span");
+  title.textContent = presetSceneTitle(scene);
+
+  link.append(image, title);
+  return link;
+}
+
+function visiblePresetScenes() {
+  const visibleCount = Math.min(3, presetScenes.length);
+  return Array.from({ length: visibleCount }, (_, slotIndex) => {
+    const sceneIndex = (presetStartIndex + slotIndex) % presetScenes.length;
+    return renderPresetScene(presetScenes[sceneIndex], slotIndex);
+  });
+}
+
+function scrollPresetScenes(direction) {
+  const gallery = document.querySelector("#presetSceneGallery");
+  if (!gallery) return;
+  if (presetScenes.length <= 1) return;
+  presetStartIndex = (presetStartIndex + direction + presetScenes.length) % presetScenes.length;
+  gallery.replaceChildren(...visiblePresetScenes());
+  updatePresetNav();
+}
+
+function updatePresetNav() {
+  const gallery = document.querySelector("#presetSceneGallery");
+  const prev = document.querySelector(".scene-nav-prev");
+  const next = document.querySelector(".scene-nav-next");
+  if (!gallery || !prev || !next) return;
+  const hasMultipleScenes = presetScenes.length > 1;
+  prev.disabled = !hasMultipleScenes;
+  next.disabled = !hasMultipleScenes;
+}
+
+async function renderPresetScenes() {
+  const gallery = document.querySelector("#presetSceneGallery");
+  if (!gallery) return;
+
+  let scenes = fallbackPresetScenes;
+  try {
+    const response = await fetch("/api/scenes", { cache: "no-store" });
+    if (response.ok) {
+      const data = await response.json();
+      if (Array.isArray(data.scenes) && data.scenes.length > 0) scenes = data.scenes;
+    }
+  } catch {
+    scenes = fallbackPresetScenes;
+  }
+
+  presetScenes = scenes;
+  presetStartIndex = 0;
+  gallery.dataset.count = String(scenes.length);
+  gallery.replaceChildren(...visiblePresetScenes());
+  updatePresetNav();
+}
+
+function bindPresetCarousel() {
+  const gallery = document.querySelector("#presetSceneGallery");
+  const prev = document.querySelector(".scene-nav-prev");
+  const next = document.querySelector(".scene-nav-next");
+  if (!gallery || !prev || !next) return;
+
+  prev.addEventListener("click", () => scrollPresetScenes(-1));
+  next.addEventListener("click", () => scrollPresetScenes(1));
+  window.addEventListener("resize", updatePresetNav);
+  updatePresetNav();
+}
+
 function renderCreatedScenes() {
   const list = document.querySelector("#localScenePicks");
   const section = document.querySelector("#localSceneSection");
@@ -75,4 +164,6 @@ function renderCreatedScenes() {
   });
 }
 
+bindPresetCarousel();
+renderPresetScenes();
 renderCreatedScenes();
