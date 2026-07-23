@@ -121,7 +121,7 @@ npm run voice:start
 
 若使用云端服务商，选择“OpenAI 兼容接口”，填写服务商根地址或 `/v1` 地址、模型和独立 API Key。服务端会以 multipart/form-data 调用 `/audio/transcriptions`。
 
-标准 OpenAI 语音输出调用服务商的 `/audio/speech`。小米 MiMo 音频模型需要在后台选择“MiMo Chat 音频协议”：ASR 使用 `mimo-v2.5-asr`，TTS 使用 `mimo-v2.5-tts` 和 `mimo_default` 音色，两者都调用 `/chat/completions`，可复用对话 API Key。MiMo TTS 会优先使用 `stream:true` 和 `pcm16` 返回 24kHz PCM16LE mono 音频块，浏览器用 Web Audio 边收边播；如果服务商流式返回异常，会自动回退到原来的完整音频接口。若尚未配置 TTS，页面只会临时使用浏览器内置朗读作为演示回退。
+标准 OpenAI 语音输出调用服务商的 `/audio/speech`。小米 MiMo 音频模型需要在后台选择“MiMo Chat 音频协议”：ASR 使用 `mimo-v2.5-asr`，TTS 使用 `mimo-v2.5-tts`；场景创建时会把对方音色固化为 `opponentVoice`，女性默认 `茉莉`，男性默认 `白桦`，两者都调用 `/chat/completions`，可复用对话 API Key。MiMo TTS 会优先使用 `stream:true` 和 `pcm16` 返回 24kHz PCM16LE mono 音频块，浏览器用 Web Audio 边收边播；如果服务商流式返回异常，会自动回退到原来的完整音频接口。若尚未配置 TTS，页面只会临时使用浏览器内置朗读作为演示回退。
 
 ## 数据与目录
 
@@ -143,7 +143,8 @@ npm run voice:start
 
 - `title`、`kicker`、`intro`、`introLines`
 - `opponent`
-- `opponentGender`：争吵方性别，会参与争吵文案和角色图片生成
+- `opponentGender`：争吵方性别，会参与争吵文案、角色图片生成和默认音色确定；创建页选择“无所谓”时会根据文案推断为男或女
+- `opponentVoice`：争吵方 MiMo TTS 音色，是场景属性；女性默认 `茉莉`，男性默认 `白桦`
 - `opponentPrompt`
 - `coachPrompt`
 - `analysisPrompt`

@@ -11,6 +11,7 @@
   ],
   "opponent": "不就一根烟吗？你至于这么较真？",
   "opponentGender": "male",
+  "opponentVoice": "白桦",
   "opponentPrompt": "你是餐厅里正在室内吸烟的男士。用户来劝你不要在餐厅吸烟，你会不耐烦、轻描淡写、嫌用户多管闲事，可能说“不就一根烟吗”“你找店员去”“我马上就抽完”。你不能把抽烟行为安到用户身上，不能说用户才是抽烟的人。你可以防御和反问，但不要威胁、辱骂、骚扰或鼓励现实冲突升级。若用户表达清楚公共空间影响、提出具体请求或要求店员介入，你可以逐渐让步。",
   "coachPrompt": "重点帮助用户在公共冲突里稳住事实和请求：说明烟味影响、明确要求停止室内吸烟，必要时请店员处理。建议要短、具体，避免道德审判和互骂。",
   "analysisPrompt": "重点观察用户是否能区分事实、影响和请求，面对对方轻描淡写时是否保持清晰表达，是否能提出停止吸烟或请店员介入的可执行方案；所有倾向必须引用用户原话，不能做心理诊断。",
@@ -21,5 +22,5 @@
   "opponentArt": "assets/restaurant-smoking/opponent-cutout.png",
   "artPrompt": "Use case: illustration-story. Asset type: immersive mode full-screen scene background. Simple hand-drawn charcoal restaurant background: small restaurant, neighboring table, ashtray, cigarette smoke haze, no people, right third reserved for a male character cutout. Rough graphite pencil and charcoal sketch, monochrome black and gray textured paper, no text, no logo, no watermark.",
   "thumbnailArtPrompt": "Use case: illustration-story. Asset type: homepage featured scene thumbnail. Simple hand-drawn charcoal and black ink collage thumbnail: a man smoking in a restaurant, annoyed and dismissive, smoky table, off-white torn paper cutout on black background, no text, no logo, no watermark.",
-  "opponentArtPrompt": "Monochrome hand-drawn adult male restaurant smoker, defensive and dismissive expression, holding a cigarette, casual dark shirt, slightly leaning back with one palm raised, three-quarter view facing left, black ink and graphite on off-white torn paper with irregular paper edge, expressive line art, three-quarter body."
+  "opponentArtPrompt": "Monochrome hand-drawn adult male restaurant smoker. Gender: male. Defensive and dismissive expression, holding a cigarette, casual dark shirt, slightly leaning back with one palm raised, three-quarter view facing left, black ink and graphite on off-white torn paper with irregular paper edge, expressive line art, three-quarter body."
 }

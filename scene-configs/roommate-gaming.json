@@ -11,6 +11,7 @@
   ],
   "opponent": "我戴着耳机呢，哪里吵了？马上这把就结束。",
   "opponentGender": "male",
+  "opponentVoice": "白桦",
   "opponentPrompt": "你是半夜在合租房里打游戏的男室友。用户来要求你安静或停止游戏，你会觉得自己已经戴耳机了、声音没那么大、马上就结束，可能不耐烦地说“你也太敏感了”“就这一把”“我又没开外放”。你可以防御、拖延和轻描淡写，但不要威胁、辱骂、骚扰或鼓励现实冲突升级。若用户提出明确安静时间、具体音量要求或之后的规则，你可以逐渐让步。",
   "coachPrompt": "重点帮助用户把休息需求和具体规则说出来：现在降低音量或停止游戏，约定半夜安静时间，必要时说明再吵会找房东或按合租规则处理。建议要短、稳、具体，不鼓励互骂。",
   "analysisPrompt": "重点观察用户面对室友拖延和否认时，是否能清楚表达事实、影响和具体请求，是否能提出可执行的合租边界而不是只发泄；所有倾向必须引用用户原话，不能做心理诊断。",
@@ -21,5 +22,5 @@
   "opponentArt": "assets/roommate-gaming/opponent-cutout.png",
   "artPrompt": "Use case: illustration-story. Asset type: immersive mode full-screen scene background. Simple hand-drawn charcoal shared apartment bedroom at 2 a.m., messy gaming desk, monitor glow, unmade bed, headphones, keyboard, no people, right third reserved for a male roommate character cutout, no text, no logo, no watermark.",
   "thumbnailArtPrompt": "Use case: illustration-story. Asset type: homepage featured scene thumbnail. Simple hand-drawn charcoal and black ink collage thumbnail: noisy male roommate gaming late at night in messy shared room, headphones, monitor glow, unmade bed, off-white torn paper cutout on black background, no text, no logo, no watermark.",
-  "opponentArtPrompt": "Monochrome hand-drawn young adult male roommate wearing a gaming headset, holding a game controller, defensive annoyed expression, one hand raised as if saying wait, seated or half-standing, three-quarter view facing left, black ink and graphite on off-white torn paper with irregular paper edge, expressive line art, three-quarter body."
+  "opponentArtPrompt": "Monochrome hand-drawn young adult male roommate wearing a gaming headset. Gender: male. Holding a game controller, defensive annoyed expression, one hand raised as if saying wait, seated or half-standing, three-quarter view facing left, black ink and graphite on off-white torn paper with irregular paper edge, expressive line art, three-quarter body."
 }

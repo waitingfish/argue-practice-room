@@ -26,7 +26,7 @@ let processingJobs = false;
 
 const defaultPrompt = `目标是帮助用户坚定、清晰、不过度攻击地表达边界。不要羞辱、操纵或鼓励报复；遇到威胁、暴力或自伤风险时，停止角色扮演，建议立即联系可信任的人或当地紧急服务。全程用简体中文。`;
 
-const opponentRolePrompt = `你是当前冲突场景里的“争吵方”，不是教练、裁判、旁白或用户。你的身份、立场、行为事实必须始终等同于场景专属提示和对方开场；即使用户辱骂、夸奖、说“不错/可以/行”，也只能理解为对场景中你的角色说的话，不能把它理解成对 AI 练习的评价。不得和用户交换身份，不得替用户说理，不得站到用户一边指责自己。你只回应用户刚说的话，保持场景里的立场、情绪和压力，但不要输出“教练：”、建议、评分、复盘、括号旁白、心理分析或语音表演说明。每次回复 1 到 3 句，像真实对话一样继续推进冲突。不要生成歧视、威胁、骚扰、煽动现实报复或人身伤害内容。直接输出真正对用户说的台词。`;
+const opponentRolePrompt = `你是当前冲突场景里的“争吵方”，不是教练、裁判、旁白或用户。你的身份、立场、行为事实必须始终等同于场景专属提示和对方开场；即使用户辱骂、夸奖、说“不错/可以/行”，也只能理解为用户正在对你这个场景角色说话，绝不能理解成对 AI 练习的评价。不得和用户交换身份，不得替用户说理，不得站到用户一边指责自己。你只回应用户刚说的话，保持场景里的立场、情绪和压力，但不要输出“教练：”、建议、评分、复盘、括号旁白、心理分析、语音表演说明、练习进度或“可以结束/这一轮”等元话语。每次回复 1 到 3 句，像真实对话一样继续推进冲突。不要生成歧视、威胁、骚扰、煽动现实报复或人身伤害内容。直接输出真正对用户说的台词，只输出台词本身。`;
 
 const coachRolePrompt = `你是“吵架练习室”里的 AI 教练，不是争吵方。你只站在用户身边给下一步建议，不替对方说话，不继续角色扮演。请用简体中文输出：1 句判断、1 句下一步策略、1 句用户可以直接说出口的话。总长度不超过 120 字。不要羞辱、操纵或鼓励报复。`;
 
@@ -717,7 +717,7 @@ function parseScene(content) {
   const result = JSON.parse(clean);
   if (!result.title || !result.opponent || !Array.isArray(result.introLines) || result.introLines.length !== 3) throw new Error("文案模型没有按要求返回场景结构");
   const artPrompt = String(result.artPrompt || "charcoal and ink narrative scene").slice(0, 1200);
-  return normalizeSceneVoice({
+  return {
     title: String(result.title).slice(0, 80), kicker: String(result.kicker || "新的对峙。"), intro: String(result.intro || "把你想说的话留在这里。"),
     introLines: result.introLines.map((line) => String(line).slice(0, 70)),
     opponent: String(result.opponent).slice(0, 250),
@@ -730,7 +730,7 @@ function parseScene(content) {
     artPrompt,
     thumbnailArtPrompt: String(result.thumbnailArtPrompt || artPrompt).slice(0, 1200),
     opponentArtPrompt: normalizeOpponentArtPrompt(result.opponentArtPrompt || artPrompt)
-  });
+  };
 }
 
 const imageStyleGuard = "Japanese retro hand-drawn manga manuscript sketch from the 1990s, like an original comic artist draft scanned from an old sketchbook, monochrome black-and-white low-saturation image, high contrast, warm nostalgic aged off-white paper scan, thick handmade black outlines, rough uneven ink lines, visible pencil construction marks and corrections, loose graphite strokes, charcoal shading, dense cross-hatching for shadows, raw sketch texture, simple background only. No color, no vivid yellow background, no solid yellow fill background, no 3D effect, no glossy high-definition anime rendering, no modern digital painting style, no smooth clean AI linework, no complex background, no overly polished commercial anime character design.";
@@ -747,16 +747,50 @@ function genderLabel(gender) {
   return "不限定性别";
 }
 
-function normalizeSceneVoice(scene) {
-  const gender = scene.opponentGender === "female" ? "female" : scene.opponentGender === "male" ? "male" : "unspecified";
+function defaultOpponentVoice(gender) {
+  if (gender === "female") return "茉莉";
+  if (gender === "male") return "白桦";
+  return "";
+}
+
+function inferOpponentGenderFromScene(scene, fallback = "female") {
+  const text = [
+    scene.opponentGender,
+    scene.opponentPrompt,
+    scene.opponentArtPrompt,
+    scene.thumbnailArtPrompt,
+    scene.opponent,
+    scene.title,
+    scene.kicker,
+    scene.intro,
+    scene.prompt
+  ].filter(Boolean).join("\n").toLowerCase();
+
+  const femalePatterns = [
+    /女性|女生|女士|女人|女友|女朋友|妻子|老婆|太太|妈妈|母亲|婆婆|岳母|姐姐|妹妹|女儿|阿姨|闺蜜|女室友|女同事|女老板|女邻居|female|woman|girl|girlfriend|wife|mother|mom|daughter|sister|aunt/
+  ];
+  const malePatterns = [
+    /男性|男生|男士|男人|男友|男朋友|丈夫|老公|爸爸|父亲|公公|岳父|哥哥|弟弟|儿子|叔叔|男室友|男同事|男老板|男邻居|male|man|boy|boyfriend|husband|father|dad|son|brother|uncle/
+  ];
+  const femaleScore = femalePatterns.reduce((score, pattern) => score + (pattern.test(text) ? 1 : 0), 0);
+  const maleScore = malePatterns.reduce((score, pattern) => score + (pattern.test(text) ? 1 : 0), 0);
+  if (femaleScore > maleScore) return "female";
+  if (maleScore > femaleScore) return "male";
+  return fallback === "male" ? "male" : "female";
+}
+
+function finalizeGeneratedSceneVoice(scene) {
+  const gender = scene.opponentGender === "female" ? "female" : scene.opponentGender === "male" ? "male" : inferOpponentGenderFromScene(scene);
+  const voice = String(scene.opponentVoice || "").trim() || defaultOpponentVoice(gender) || "茉莉";
   return {
     ...scene,
-    opponentGender: gender
+    opponentGender: gender,
+    opponentVoice: voice
   };
 }
 
 const sceneWriterSystemPrompt = `你是互动叙事场景编剧。可以在内部进行必要推理，但最终回复只能包含一个严格 JSON 对象，不要 markdown，不要解释，不要把思考过程写进结果：{title,kicker,intro,introLines:[三句中文],opponent,opponentPrompt,coachPrompt,analysisPrompt,winCondition,refereePrompt,opponentGender,artPrompt,thumbnailArtPrompt,opponentArtPrompt}。
-文案简体中文，克制、具体、非暴力；opponent 是对方的第一句，只能是对用户说的台词，不能包含括号动作、旁白、角色名或舞台说明；opponentGender 只能是 male、female 或 unspecified，必须遵循用户指定的对方性别；opponentPrompt 描述争吵方的人设、关系身份、说话方式和施压/防御方式，并明确对方性别；coachPrompt 描述实时帮忙专家应该重点教什么；analysisPrompt 描述复盘分析师在这个场景中要重点观察的表达模式，不能做心理诊断；winCondition 描述必须由对方言行可观察确认的场景胜利条件，不能把辱骂或压制当胜利；refereePrompt 描述裁判在本场景应重点检查的让步、边界或行动承诺。
+文案简体中文，克制、具体、非暴力；opponent 是对方的第一句，只能是对用户说的台词，不能包含括号动作、旁白、角色名或舞台说明；opponentGender 只能是 male 或 female，用户指定男性/女性时必须遵循，用户不限定性别时必须根据用户描述、关系身份、称谓和场景文案推断一个最合适的 male 或 female，不能返回 unspecified；opponentPrompt 描述争吵方的人设、关系身份、说话方式和施压/防御方式，并明确对方性别；coachPrompt 描述实时帮忙专家应该重点教什么；analysisPrompt 描述复盘分析师在这个场景中要重点观察的表达模式，不能做心理诊断；winCondition 描述必须由对方言行可观察确认的场景胜利条件，不能把辱骂或压制当胜利；refereePrompt 描述裁判在本场景应重点检查的让步、边界或行动承诺。
 三类图片 prompt 必须都是英文，并描述同一地点、同一个对方角色和同一组服装道具；服务端会先用 thumbnailArtPrompt 生成母图，再把母图作为输入派生另外两张图。thumbnailArtPrompt 是视觉母图：完整表现环境、单个对方角色和冲突瞬间，构图适合首页横向小图，必须是一张不规则撕纸边缘的横向画片，画面内容都在旧纸片内部，不能有文字；artPrompt 是从母图派生沉浸背景的编辑要求，描述要保留的同一环境、视角和关键道具，移除所有人物，并在右侧预留角色空间；opponentArtPrompt 是从母图提取同一对方角色的编辑要求，只描述该角色的身份、性别、年龄段、姿态、表情、发型、服装、道具、朝向和黑白手绘剪贴/纸片边缘风格，人物身份、服装与道具必须和 thumbnailArtPrompt 完全一致，性别必须与 opponentGender 一致，三分之二或全身。
 三张图统一为 ${imageStyleGuard} thumbnailArtPrompt 和 opponentArtPrompt 不要描述透明背景、green screen、chroma key、background removal，也不要写 no text/logo/watermark 等固定限制；这些限制由服务端代码统一追加。`;
 
@@ -771,7 +805,7 @@ async function createSceneText(config, prompt, opponentGender) {
   if (!response.ok) throw new Error(data.error?.message || `文案模型返回 ${response.status}`);
   const scene = parseScene(readChatContent(data, { allowThinking: true }));
   if (preferredGender !== "unspecified") scene.opponentGender = preferredGender;
-  return scene;
+  return finalizeGeneratedSceneVoice(scene);
 }
 
 function sceneConfigPath(id) {
@@ -788,7 +822,7 @@ function readSceneConfig(id) {
   const primary = sceneConfigPath(id);
   const filePath = fs.existsSync(primary) ? primary : fs.existsSync(published) ? published : "";
   if (!filePath) return null;
-  return normalizeSceneVoice(JSON.parse(fs.readFileSync(filePath, "utf8")));
+  return JSON.parse(fs.readFileSync(filePath, "utf8"));
 }
 
 const builtInSceneOrder = ["restaurant-smoking", "phone-night", "roommate-gaming"];
@@ -1038,7 +1072,7 @@ async function makeCutoutTransparent(buffer, options = {}) {
 }
 
 function validateSceneDefinition(scene) {
-  const requiredStrings = ["title", "kicker", "intro", "opponent", "opponentPrompt", "coachPrompt", "analysisPrompt", "winCondition", "refereePrompt", "opponentGender", "artPrompt", "thumbnailArtPrompt", "opponentArtPrompt", "art", "thumbnailArt", "opponentArt"];
+  const requiredStrings = ["title", "kicker", "intro", "opponent", "opponentPrompt", "coachPrompt", "analysisPrompt", "winCondition", "refereePrompt", "opponentGender", "opponentVoice", "artPrompt", "thumbnailArtPrompt", "opponentArtPrompt", "art", "thumbnailArt", "opponentArt"];
   for (const key of requiredStrings) {
     if (!String(scene[key] || "").trim()) throw new Error(`场景配置缺少字段：${key}`);
   }
@@ -1305,8 +1339,14 @@ function mimoHeaders(apiKey) {
   return { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}`, "api-key": apiKey };
 }
 
-async function callSpeech(config, input) {
+function speechVoiceForScene(config, scene = {}) {
+  if (config.speechMode !== "mimo") return config.speechVoice;
+  return String(scene.opponentVoice || "").trim() || config.speechVoice || "mimo_default";
+}
+
+async function callSpeech(config, input, options = {}) {
   const apiKey = config.speechApiKey || config.apiKey;
+  const voice = speechVoiceForScene(config, options.scene);
   if (config.speechMode === "mimo") {
     const endpoint = speechEndpoint(config);
     const format = config.speechFormat || "wav";
@@ -1316,7 +1356,7 @@ async function callSpeech(config, input) {
       body: JSON.stringify({
         model: config.speechModel || "mimo-v2.5-tts",
         messages: mimoSpeechMessages(input),
-        audio: { format, voice: config.speechVoice || "mimo_default" }
+        audio: { format, voice }
       }),
       signal: AbortSignal.timeout(Number(config.speechTimeoutSeconds || 120) * 1000)
     });
@@ -1334,7 +1374,7 @@ async function callSpeech(config, input) {
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
     body: JSON.stringify({
       model: config.speechModel,
-      voice: config.speechVoice,
+      voice,
       input: String(input).slice(0, 4096),
       response_format: config.speechFormat
     }),
@@ -1392,7 +1432,11 @@ async function createReplay(config, scene, sessionId) {
         fs.copyFileSync(recording, destination);
         audioSource = "recorded";
       } else {
-        const audio = await callSpeech({ ...config, speechFormat: "wav" }, message.content);
+        const audio = await callSpeech(
+          { ...config, speechFormat: "wav" },
+          message.content,
+          message.role === "opponent" ? { scene } : {}
+        );
         durableWriteFile(destination, audio.buffer);
       }
       timeline.push({
@@ -1424,17 +1468,18 @@ async function createReplay(config, scene, sessionId) {
   }
 }
 
-async function streamMimoSpeech(config, input, response) {
+async function streamMimoSpeech(config, input, response, options = {}) {
   const apiKey = config.speechApiKey || config.apiKey;
   if (config.speechMode !== "mimo") throw new Error("当前语音服务不支持流式合成");
   const endpoint = speechEndpoint(config);
+  const voice = speechVoiceForScene(config, options.scene);
   const upstream = await fetch(endpoint, {
     method: "POST",
     headers: mimoHeaders(apiKey),
     body: JSON.stringify({
       model: config.speechModel || "mimo-v2.5-tts",
       messages: mimoSpeechMessages(input),
-      audio: { format: "pcm16", voice: config.speechVoice || "mimo_default" },
+      audio: { format: "pcm16", voice },
       stream: true
     }),
     signal: AbortSignal.timeout(Number(config.speechTimeoutSeconds || 120) * 1000)
@@ -1740,11 +1785,11 @@ async function handleApi(request, response, pathname) {
       const input = String(savedMessage?.content || payload.input || "").trim();
       if (!input || input.length > 4096) return sendJson(response, 400, { error: "语音文本长度必须在 1 到 4096 字之间" });
       try {
-        const audio = await callSpeech(config, input);
+        const audio = await callSpeech(config, input, { scene });
         response.writeHead(200, { "Content-Type": audio.contentType, "Content-Length": audio.buffer.length, "Cache-Control": "no-store" });
         return response.end(audio.buffer);
       } catch (error) {
-        logModelError("会话语音合成", error, { sessionId, sceneId: scene.id, endpoint: speechEndpoint(config), model: config.speechModel, voice: config.speechVoice, mode: config.speechMode });
+        logModelError("会话语音合成", error, { sessionId, sceneId: scene.id, endpoint: speechEndpoint(config), model: config.speechModel, voice: speechVoiceForScene(config, scene), mode: config.speechMode });
         return sendJson(response, 502, { error: "语音合成失败，请检查后台配置或服务端日志" });
       }
     }
@@ -1758,9 +1803,9 @@ async function handleApi(request, response, pathname) {
       const input = String(savedMessage?.content || payload.input || "").trim();
       if (!input || input.length > 4096) return sendJson(response, 400, { error: "语音文本长度必须在 1 到 4096 字之间" });
       try {
-        return await streamMimoSpeech(config, input, response);
+        return await streamMimoSpeech(config, input, response, { scene });
       } catch (error) {
-        logModelError("会话流式语音合成", error, { sessionId, sceneId: scene.id, endpoint: speechEndpoint(config), model: config.speechModel, voice: config.speechVoice, mode: config.speechMode });
+        logModelError("会话流式语音合成", error, { sessionId, sceneId: scene.id, endpoint: speechEndpoint(config), model: config.speechModel, voice: speechVoiceForScene(config, scene), mode: config.speechMode });
         if (!response.headersSent) return sendJson(response, 502, { error: "流式语音合成失败，请检查后台配置或服务端日志" });
         return response.destroy(error);
       }
