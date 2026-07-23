@@ -229,6 +229,11 @@ function buildEndpoint(baseUrl, suffix) {
   return `${clean}${suffix}`;
 }
 
+function buildImageEndpoint(baseUrl, operation) {
+  const clean = trimSlash(baseUrl).replace(/\/images\/(?:generations|edits)$/, "");
+  return `${clean}/images/${operation}`;
+}
+
 function logModelError(scope, error, details = {}) {
   console.error(`[${new Date().toISOString()}] ${scope} 异常`, {
     ...details,
@@ -724,8 +729,16 @@ function parseScene(content) {
     opponentGender: String(result.opponentGender || "unspecified"),
     artPrompt,
     thumbnailArtPrompt: String(result.thumbnailArtPrompt || artPrompt).slice(0, 1200),
-    opponentArtPrompt: String(result.opponentArtPrompt || artPrompt).slice(0, 1200)
+    opponentArtPrompt: normalizeOpponentArtPrompt(result.opponentArtPrompt || artPrompt)
   });
+}
+
+const imageStyleGuard = "Japanese retro hand-drawn manga manuscript sketch from the 1990s, like an original comic artist draft scanned from an old sketchbook, monochrome black-and-white low-saturation image, high contrast, warm nostalgic aged off-white paper scan, thick handmade black outlines, rough uneven ink lines, visible pencil construction marks and corrections, loose graphite strokes, charcoal shading, dense cross-hatching for shadows, raw sketch texture, simple background only. No color, no vivid yellow background, no solid yellow fill background, no 3D effect, no glossy high-definition anime rendering, no modern digital painting style, no smooth clean AI linework, no complex background, no overly polished commercial anime character design.";
+
+function normalizeOpponentArtPrompt(value) {
+  const prompt = String(value || "").trim();
+  if (/Japanese retro hand-drawn manga manuscript|1990s.*manga manuscript/i.test(prompt)) return prompt.slice(0, 1200);
+  return `${prompt}. ${imageStyleGuard} Visible off-white paper-cut silhouette with irregular paper edge, low-detail expressive face, not photorealistic, not realistic portrait, not fashion illustration.`.slice(0, 1200);
 }
 
 function genderLabel(gender) {
@@ -742,12 +755,17 @@ function normalizeSceneVoice(scene) {
   };
 }
 
+const sceneWriterSystemPrompt = `你是互动叙事场景编剧。可以在内部进行必要推理，但最终回复只能包含一个严格 JSON 对象，不要 markdown，不要解释，不要把思考过程写进结果：{title,kicker,intro,introLines:[三句中文],opponent,opponentPrompt,coachPrompt,analysisPrompt,winCondition,refereePrompt,opponentGender,artPrompt,thumbnailArtPrompt,opponentArtPrompt}。
+文案简体中文，克制、具体、非暴力；opponent 是对方的第一句，只能是对用户说的台词，不能包含括号动作、旁白、角色名或舞台说明；opponentGender 只能是 male、female 或 unspecified，必须遵循用户指定的对方性别；opponentPrompt 描述争吵方的人设、关系身份、说话方式和施压/防御方式，并明确对方性别；coachPrompt 描述实时帮忙专家应该重点教什么；analysisPrompt 描述复盘分析师在这个场景中要重点观察的表达模式，不能做心理诊断；winCondition 描述必须由对方言行可观察确认的场景胜利条件，不能把辱骂或压制当胜利；refereePrompt 描述裁判在本场景应重点检查的让步、边界或行动承诺。
+三类图片 prompt 必须都是英文，并描述同一地点、同一个对方角色和同一组服装道具；服务端会先用 thumbnailArtPrompt 生成母图，再把母图作为输入派生另外两张图。thumbnailArtPrompt 是视觉母图：完整表现环境、单个对方角色和冲突瞬间，构图适合首页横向小图，不能有文字；artPrompt 是从母图派生沉浸背景的编辑要求，描述要保留的同一环境、视角和关键道具，移除所有人物，并在右侧预留角色空间；opponentArtPrompt 是从母图提取同一对方角色的编辑要求，只描述该角色的身份、性别、年龄段、姿态、表情、发型、服装、道具、朝向和黑白手绘剪贴/纸片边缘风格，人物身份、服装与道具必须和 thumbnailArtPrompt 完全一致，性别必须与 opponentGender 一致，三分之二或全身。
+三张图统一为 ${imageStyleGuard} opponentArtPrompt 不要描述背景、透明背景、green screen、chroma key、background removal，也不要写 no text/logo/watermark 等固定限制；这些限制由服务端代码统一追加。`;
+
 async function createSceneText(config, prompt, opponentGender) {
   const preferredGender = ["male", "female"].includes(opponentGender) ? opponentGender : "unspecified";
   const genderCopy = genderLabel(preferredGender);
   const response = await fetch(buildEndpoint(config.baseUrl, "/chat/completions"), {
     method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${config.apiKey}` },
-    body: JSON.stringify({ model: config.model, temperature: 0.85, messages: [{ role: "system", content: "你是互动叙事场景编剧。可以在内部进行必要推理，但最终回复只能包含一个严格 JSON 对象，不要 markdown，不要解释，不要把思考过程写进结果：{title,kicker,intro,introLines:[三句中文],opponent,opponentPrompt,coachPrompt,analysisPrompt,winCondition,refereePrompt,opponentGender,artPrompt,thumbnailArtPrompt,opponentArtPrompt}。文案简体中文，克制、具体、非暴力；opponent 是对方的第一句，只能是对用户说的台词，不能包含括号动作、旁白、角色名或舞台说明；opponentGender 只能是 male、female 或 unspecified，必须遵循用户指定的对方性别；opponentPrompt 描述争吵方的人设、关系身份、说话方式和施压/防御方式，并明确对方性别；coachPrompt 描述实时帮忙专家应该重点教什么；analysisPrompt 描述复盘分析师在这个场景中要重点观察的表达模式，不能做心理诊断；winCondition 描述必须由对方言行可观察确认的场景胜利条件，不能把辱骂或压制当胜利；refereePrompt 描述裁判在本场景应重点检查的让步、边界或行动承诺。三类图片 prompt 必须都是英文，并保持同一黑白手绘风格：artPrompt 是沉浸模式 16:9 背景图，必须是不含人物的环境背景，右侧预留角色空间；thumbnailArtPrompt 是首页小图，包含场景关系和冲突瞬间，可出现对方但不能有文字；opponentArtPrompt 是右侧争吵人形象图，必须生成单个对方角色，性别与 opponentGender 一致，三分之二或全身，黑白手绘剪贴/纸片边缘，不能有文字、logo、水印。" }, { role: "user", content: `用户描述：${prompt}\n对方性别偏好：${genderCopy}\n规范化性别：${preferredGender}` }] }), signal: AbortSignal.timeout(30000)
+    body: JSON.stringify({ model: config.model, temperature: 0.85, messages: [{ role: "system", content: sceneWriterSystemPrompt }, { role: "user", content: `用户描述：${prompt}\n对方性别偏好：${genderCopy}\n规范化性别：${preferredGender}` }] }), signal: AbortSignal.timeout(30000)
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data.error?.message || `文案模型返回 ${response.status}`);
@@ -768,7 +786,7 @@ function readSceneConfig(id) {
   if (!/^[a-z0-9-]+$/.test(id)) return null;
   const published = path.join(publishedSceneDir(id), "scene.json");
   const primary = sceneConfigPath(id);
-  const filePath = fs.existsSync(published) ? published : fs.existsSync(primary) ? primary : "";
+  const filePath = fs.existsSync(primary) ? primary : fs.existsSync(published) ? published : "";
   if (!filePath) return null;
   return normalizeSceneVoice(JSON.parse(fs.readFileSync(filePath, "utf8")));
 }
@@ -781,14 +799,7 @@ function detectImageFormat(buffer) {
   throw new Error("图片模型返回了不支持的文件格式");
 }
 
-async function createSceneImage(config, artPrompt, size = "1536x1024") {
-  const apiKey = config.imageApiKey || config.apiKey;
-  if (!apiKey) throw new Error("未配置图片模型 API Key");
-  const timeoutMs = Number(config.imageTimeoutSeconds || 180) * 1000;
-  const response = await fetch(buildEndpoint(config.imageBaseUrl || config.baseUrl, "/images/generations"), {
-    method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-    body: JSON.stringify({ model: config.imageModel || "gpt-image-1", prompt: artPrompt, size, response_format: "b64_json" }), signal: AbortSignal.timeout(timeoutMs)
-  });
+async function readSceneImageResponse(response, timeoutMs) {
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data.error?.message || `图片模型返回 ${response.status}`);
   const item = data.data?.[0];
@@ -801,19 +812,86 @@ async function createSceneImage(config, artPrompt, size = "1536x1024") {
     const contentLength = Number(image.headers.get("content-length") || 0);
     if (contentLength > 25 * 1024 * 1024) throw new Error("图片模型返回的文件过大");
     buffer = Buffer.from(await image.arrayBuffer());
+  } else {
+    throw new Error("图片模型返回格式不受支持");
   }
-  else throw new Error("图片模型返回格式不受支持");
   if (buffer.length > 25 * 1024 * 1024) throw new Error("图片模型返回的文件过大");
   return { buffer, ...detectImageFormat(buffer) };
 }
 
+async function createSceneImage(config, artPrompt, size = "1536x1024") {
+  const apiKey = config.imageApiKey || config.apiKey;
+  if (!apiKey) throw new Error("未配置图片模型 API Key");
+  const timeoutMs = Number(config.imageTimeoutSeconds || 180) * 1000;
+  const response = await fetch(buildImageEndpoint(config.imageBaseUrl || config.baseUrl, "generations"), {
+    method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+    body: JSON.stringify({ model: config.imageModel || "gpt-image-1", prompt: artPrompt, size, response_format: "b64_json" }), signal: AbortSignal.timeout(timeoutMs)
+  });
+  return readSceneImageResponse(response, timeoutMs);
+}
+
+async function createSceneImageEdit(config, artPrompt, referenceImage, size = "1536x1024") {
+  const apiKey = config.imageApiKey || config.apiKey;
+  if (!apiKey) throw new Error("未配置图片模型 API Key");
+  const timeoutMs = Number(config.imageTimeoutSeconds || 180) * 1000;
+  const referenceFormat = detectImageFormat(referenceImage);
+  const form = new FormData();
+  form.append("model", config.imageModel || "gpt-image-1");
+  form.append("prompt", artPrompt);
+  form.append("size", size);
+  form.append("response_format", "b64_json");
+  form.append("image", new Blob([referenceImage], { type: referenceFormat.mime }), `reference.${referenceFormat.extension}`);
+  const response = await fetch(buildImageEndpoint(config.imageBaseUrl || config.baseUrl, "edits"), {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey}` },
+    body: form,
+    signal: AbortSignal.timeout(timeoutMs)
+  });
+  return readSceneImageResponse(response, timeoutMs);
+}
+
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+const chromaKeyCutoutPrompt = `Create the requested subject on a perfectly flat solid #00ff00 chroma-key background for background removal.
+The background must be one uniform color with no shadows, gradients, texture, reflections, floor plane, or lighting variation.
+Keep the subject fully separated from the background with crisp edges and generous padding.
+Do not use #00ff00 anywhere in the subject.`;
+
 function cutoutImagePrompt(prompt) {
-  return [
-    String(prompt || ""),
-    "Output requirement: transparent background PNG with alpha channel.",
-    "Only the single character and its off-white torn-paper cutout edge should remain visible.",
-    "No rectangular canvas, no white/gray/black background panel, no drop shadow, no text, no logo, no watermark."
-  ].join(" ").slice(0, 1800);
+  const subjectPrompt = String(prompt || "").trim().slice(0, 1700);
+  return [subjectPrompt, chromaKeyCutoutPrompt].filter(Boolean).join("\n\n");
+}
+
+function masterImagePrompt(prompt) {
+  return `${String(prompt || "").trim().slice(0, 900)}
+
+This image is the visual master reference for one coherent three-image asset set. Show exactly one opponent character and the complete conflict environment. Establish a distinctive but simple character identity, hairstyle, clothing silhouette, prop, room geometry, viewpoint, and manuscript line language that can be preserved in later edits. ${imageStyleGuard} No photorealism, no text, no logo, no watermark.`.slice(0, 1800);
+}
+
+function backgroundEditPrompt(prompt) {
+  return `Use the input image as the visual master reference.
+Transform it into the immersive-mode environment background described below:
+${String(prompt || "").trim().slice(0, 900)}
+
+Remove every person completely. Preserve the same location, viewpoint, room geometry, furniture, props, monochrome black-and-white palette, aged paper scan texture, dense cross-hatching, charcoal shadows, rough handmade manga manuscript line style, visible sketch marks, and correction traces from the input image. Reconstruct naturally any area previously hidden by the character. Keep the right third visually quiet and open for placing the matching character cutout. ${imageStyleGuard} Do not introduce a new location, new character, text, logo, or watermark.`.slice(0, 2200);
+}
+
+function opponentEditPrompt(prompt) {
+  return cutoutImagePrompt(`Use the input image as the visual master reference.
+Extract and redraw the exact same single opponent character shown in the input image:
+${String(prompt || "").trim().slice(0, 900)}
+
+Preserve the character's identity, gender, age, face design, hairstyle, clothing, accessories, prop, proportions, pose language, monochrome black-and-white palette, aged paper scan texture, dense cross-hatching, charcoal shadows, rough handmade manga manuscript line style, visible sketch marks, and correction traces. Show one three-quarter-body or full-body character facing toward the user. Remove the original environment and all other visual elements. ${imageStyleGuard}`);
+}
+
+function saveImageDebugArtifact(stagePath, baseName, attempt, prompt, image) {
+  const debugPath = path.join(stagePath, "debug-images");
+  fs.mkdirSync(debugPath, { recursive: true });
+  const prefix = `${baseName}-attempt-${attempt}`;
+  durableWriteFile(path.join(debugPath, `${prefix}-raw.${image.extension}`), image.buffer);
+  durableWriteFile(path.join(debugPath, `${prefix}-prompt.txt`), Buffer.from(String(prompt || ""), "utf8"));
 }
 
 async function makeCutoutTransparent(buffer) {
@@ -821,43 +899,30 @@ async function makeCutoutTransparent(buffer) {
   const { data, info } = await image.raw().toBuffer({ resolveWithObject: true });
   const { width, height, channels } = info;
   const total = width * height;
-  const remove = new Uint8Array(total);
+  const background = new Uint8Array(total);
   const queue = [];
   let head = 0;
 
+  function clamp(value, min = 0, max = 255) {
+    return Math.max(min, Math.min(max, Math.round(value)));
+  }
+
   function pixel(index) {
     const offset = index * channels;
-    const r = data[offset];
-    const g = data[offset + 1];
-    const b = data[offset + 2];
-    const a = data[offset + 3];
-    const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
-    return { r, g, b, a, luminance, spread: Math.max(r, g, b) - Math.min(r, g, b) };
+    return { r: data[offset], g: data[offset + 1], b: data[offset + 2], a: data[offset + 3] };
   }
 
-  const sampleIndexes = [];
-  for (let x = 0; x < width; x += Math.max(1, Math.floor(width / 80))) {
-    sampleIndexes.push(x, (height - 1) * width + x);
-  }
-  for (let y = 0; y < height; y += Math.max(1, Math.floor(height / 80))) {
-    sampleIndexes.push(y * width, y * width + width - 1);
-  }
-  const borderLuminance = sampleIndexes.reduce((sum, index) => sum + pixel(index).luminance, 0) / sampleIndexes.length;
-  const lightBackdrop = borderLuminance >= 120;
-
-  function isRemovable(index) {
-    const { r, g, b, a, luminance, spread } = pixel(index);
-    if (a === 0) return true;
-    if (lightBackdrop) {
-      const neutral = spread <= 4 && Math.abs(r - g) <= 4 && Math.abs(r - b) <= 4;
-      return neutral && luminance > 235;
-    }
-    return luminance < 86 && Math.max(r, g, b) < 106;
+  function isChromaGreen(index, loose = false) {
+    const { r, g, b, a } = pixel(index);
+    if (a < 8) return true;
+    const maxOther = Math.max(r, b);
+    if (loose) return g > 115 && g - maxOther > 36 && g > r * 1.22 && g > b * 1.22;
+    return g > 145 && g - r > 64 && g - b > 64;
   }
 
   function enqueue(index) {
-    if (remove[index] || !isRemovable(index)) return;
-    remove[index] = 1;
+    if (background[index] || !isChromaGreen(index, true)) return;
+    background[index] = 1;
     queue.push(index);
   }
 
@@ -879,17 +944,67 @@ async function makeCutoutTransparent(buffer) {
     if (index + width < total) enqueue(index + width);
   }
 
-  const alpha = Buffer.alloc(total, 255);
   for (let index = 0; index < total; index++) {
-    if (remove[index]) alpha[index] = 0;
+    if (isChromaGreen(index)) background[index] = 1;
   }
 
-  const softenedAlpha = await sharp(alpha, { raw: { width, height, channels: 1 } }).blur(0.45).raw().toBuffer();
-  for (let index = 0; index < total; index++) {
-    data[index * channels + 3] = softenedAlpha[index];
+  const removedCount = background.reduce((sum, value) => sum + value, 0);
+  if (removedCount < total * 0.05) throw new Error("人物图没有检测到稳定的 #00ff00 绿幕背景");
+
+  function touchesBackground(index) {
+    const x = index % width;
+    if (x > 0 && background[index - 1]) return true;
+    if (x + 1 < width && background[index + 1]) return true;
+    if (index >= width && background[index - width]) return true;
+    if (index + width < total && background[index + width]) return true;
+    return false;
   }
 
-  return sharp(data, { raw: { width, height, channels } }).png().toBuffer();
+  const alpha = new Uint8Array(total);
+  const matte = new Uint8Array(total);
+  for (let index = 0; index < total; index++) {
+    const offset = index * channels;
+    const r = data[offset];
+    const g = data[offset + 1];
+    const b = data[offset + 2];
+    const sourceAlpha = data[offset + 3];
+    if (background[index] || sourceAlpha < 8) {
+      alpha[index] = 0;
+      matte[index] = 1;
+      continue;
+    }
+
+    const maxOther = Math.max(r, b);
+    const greenExcess = g - maxOther;
+    const nearEdge = touchesBackground(index);
+    if (nearEdge && greenExcess > 8 && g > 80) {
+      const estimatedAlpha = clamp((maxOther / 245) * 255);
+      alpha[index] = Math.max(24, Math.min(255, estimatedAlpha));
+      matte[index] = alpha[index] < 250 ? 1 : 0;
+      continue;
+    }
+    alpha[index] = sourceAlpha;
+  }
+
+  for (let index = 0; index < total; index++) {
+    const offset = index * channels;
+    const nextAlpha = alpha[index];
+    if (nextAlpha === 0) {
+      data[offset] = 0;
+      data[offset + 1] = 0;
+      data[offset + 2] = 0;
+    } else if (matte[index]) {
+      const normalized = nextAlpha / 255;
+      data[offset] = clamp(data[offset] / normalized);
+      data[offset + 1] = clamp((data[offset + 1] - (1 - normalized) * 255) / normalized);
+      data[offset + 2] = clamp(data[offset + 2] / normalized);
+    } else if (touchesBackground(index) && data[offset + 1] > Math.max(data[offset], data[offset + 2]) + 12) {
+      data[offset + 1] = Math.max(data[offset], data[offset + 2]) + 12;
+    }
+    data[offset + 3] = nextAlpha;
+  }
+
+  return sharp(data, { raw: { width, height, channels } }).greyscale().png().toBuffer();
 }
 
 function validateSceneDefinition(scene) {
@@ -913,24 +1028,47 @@ async function ensureSceneImage(stagePath, jobId, scene, promptKey, baseName, si
   let imagePath = stagedImage(stagePath, baseName);
   if (imagePath) {
     if (!options.transparentCutout) return imagePath;
-    const converted = await makeCutoutTransparent(fs.readFileSync(imagePath));
+    const stagedBuffer = fs.readFileSync(imagePath);
+    const stats = await sharp(stagedBuffer).ensureAlpha().stats();
+    if (stats.channels[3]?.min < 255) return imagePath;
+    const converted = await makeCutoutTransparent(stagedBuffer);
     const transparentPath = path.join(stagePath, `${baseName}.png`);
     durableWriteFile(transparentPath, converted);
     if (imagePath !== transparentPath) fs.unlinkSync(imagePath);
     return transparentPath;
   }
   updateJob(jobId, { status: "generating_image", progress, message });
-  const imagePrompt = options.transparentCutout ? cutoutImagePrompt(scene[promptKey]) : scene[promptKey];
-  const image = await createSceneImage(readConfig(), imagePrompt, size);
-  if (options.transparentCutout) {
-    const converted = await makeCutoutTransparent(image.buffer);
-    imagePath = path.join(stagePath, `${baseName}.png`);
-    durableWriteFile(imagePath, converted);
-    return imagePath;
+  const imagePrompt = options.promptBuilder ? options.promptBuilder(scene[promptKey]) : scene[promptKey];
+
+  let lastError;
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    try {
+      const config = readConfig();
+      const image = options.referenceImagePath
+        ? await createSceneImageEdit(config, imagePrompt, fs.readFileSync(options.referenceImagePath), size)
+        : await createSceneImage(config, imagePrompt, size);
+      saveImageDebugArtifact(stagePath, baseName, attempt, imagePrompt, image);
+      if (options.transparentCutout) {
+        const converted = await makeCutoutTransparent(image.buffer);
+        imagePath = path.join(stagePath, `${baseName}.png`);
+        durableWriteFile(imagePath, converted);
+        durableWriteFile(path.join(stagePath, "debug-images", `${baseName}-attempt-${attempt}-processed.png`), converted);
+        return imagePath;
+      }
+      imagePath = path.join(stagePath, `${baseName}.${image.extension}`);
+      durableWriteFile(imagePath, image.buffer);
+      return imagePath;
+    } catch (error) {
+      lastError = error;
+      logModelError("场景图片生成", error, { jobId, promptKey, baseName, size, attempt, maxAttempts: 2 });
+      if (attempt < 2) {
+        updateJob(jobId, { status: "generating_image", progress, message: `${message}失败，正在重试一次`, error: error.message || "图片生成失败" });
+        await wait(800);
+      }
+    }
   }
-  imagePath = path.join(stagePath, `${baseName}.${image.extension}`);
-  durableWriteFile(imagePath, image.buffer);
-  return imagePath;
+
+  throw new Error(`${message}连续失败 2 次：${lastError?.message || "图片生成失败"}`);
 }
 
 async function runSceneJob(id) {
@@ -957,9 +1095,9 @@ async function runSceneJob(id) {
       atomicWriteJson(draftPath, scene);
     }
 
-    const backgroundPath = await ensureSceneImage(stagePath, id, scene, "artPrompt", "background", "1536x1024", 45, "文案已完成，正在生成沉浸背景");
-    const thumbnailPath = await ensureSceneImage(stagePath, id, scene, "thumbnailArtPrompt", "thumbnail", "1536x1024", 62, "正在生成首页小图");
-    const opponentPath = await ensureSceneImage(stagePath, id, scene, "opponentArtPrompt", "opponent", "1024x1536", 76, "正在生成争吵人形象", { transparentCutout: true });
+    const thumbnailPath = await ensureSceneImage(stagePath, id, scene, "thumbnailArtPrompt", "thumbnail", "1536x1024", 42, "文案已完成，正在生成视觉母图", { promptBuilder: masterImagePrompt });
+    const backgroundPath = await ensureSceneImage(stagePath, id, scene, "artPrompt", "background", "1536x1024", 60, "正在从母图派生沉浸背景", { referenceImagePath: thumbnailPath, promptBuilder: backgroundEditPrompt });
+    const opponentPath = await ensureSceneImage(stagePath, id, scene, "opponentArtPrompt", "opponent", "1024x1536", 76, "正在从母图派生争吵人形象", { referenceImagePath: thumbnailPath, promptBuilder: opponentEditPrompt, transparentCutout: true });
 
     const backgroundFormat = detectImageFormat(fs.readFileSync(backgroundPath));
     const thumbnailFormat = detectImageFormat(fs.readFileSync(thumbnailPath));
@@ -996,7 +1134,8 @@ async function runSceneJob(id) {
       sceneId: job?.sceneId,
       stage: readJob(id)?.status,
       chatEndpoint: buildEndpoint(readConfig().baseUrl, "/chat/completions"),
-      imageEndpoint: buildEndpoint(readConfig().imageBaseUrl || readConfig().baseUrl, "/images/generations")
+      imageEndpoint: buildImageEndpoint(readConfig().imageBaseUrl || readConfig().baseUrl, "generations"),
+      imageEditEndpoint: buildImageEndpoint(readConfig().imageBaseUrl || readConfig().baseUrl, "edits")
     });
     if (!fs.existsSync(destination) && fs.existsSync(stagePath)) fs.rmSync(stagePath, { recursive: true, force: true });
     updateJob(id, { status: "failed", progress: 0, message: "场景生成失败", error: error.message || "生成失败" });
@@ -1032,12 +1171,12 @@ function recoverJobs() {
 async function testSceneImage(config) {
   const apiKey = config.imageApiKey || config.apiKey;
   const timeoutMs = Number(config.imageTimeoutSeconds || 180) * 1000;
-  const response = await fetch(buildEndpoint(config.imageBaseUrl || config.baseUrl, "/images/generations"), {
+  const response = await fetch(buildImageEndpoint(config.imageBaseUrl || config.baseUrl, "generations"), {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
     body: JSON.stringify({
       model: config.imageModel || "gpt-image-1",
-      prompt: "A simple original black ink hand-drawn scene, two people in a tense conversation, no text, no logo.",
+      prompt: `A simple original tense conversation scene. ${imageStyleGuard} No text, no logo, no watermark.`,
       size: "1024x1024",
       response_format: "b64_json"
     }),
@@ -1777,9 +1916,9 @@ async function handleApi(request, response, pathname) {
     if (error) return sendJson(response, 400, { error });
     try {
       const message = await testSceneImage(testConfig);
-      return sendJson(response, 200, { message, endpoint: buildEndpoint(testConfig.imageBaseUrl || testConfig.baseUrl, "/images/generations") });
+      return sendJson(response, 200, { message, endpoint: buildImageEndpoint(testConfig.imageBaseUrl || testConfig.baseUrl, "generations") });
     } catch (error) {
-      logModelError("图片测试", error, { endpoint: buildEndpoint(testConfig.imageBaseUrl || testConfig.baseUrl, "/images/generations"), model: testConfig.imageModel });
+      logModelError("图片测试", error, { endpoint: buildImageEndpoint(testConfig.imageBaseUrl || testConfig.baseUrl, "generations"), model: testConfig.imageModel });
       return sendJson(response, 502, { error: error.message });
     }
   }

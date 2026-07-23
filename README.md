@@ -45,7 +45,7 @@ http://127.0.0.1:4173/admin.html
 - 对话接口地址：可填根地址、`/v1` 地址，或完整 `/chat/completions` 地址
 - 对话模型名称
 - 对话 API Key
-- 图片接口地址：可填根地址、`/v1` 地址，或完整 `/images/generations` 地址
+- 图片接口地址：可填根地址、`/v1` 地址，或完整 `/images/generations`、`/images/edits` 地址；服务商必须同时支持图片生成和图片编辑
 - 图片模型名称
 - 图片 API Key
 - 图片生成超时时间
@@ -59,7 +59,7 @@ http://127.0.0.1:4173/admin.html
 1. 用户进入首页并选择场景，再选择“训练模式”或“沉浸模式”。
 2. 创建新场景时，前端先创建持久生成任务，并通过 SSE 订阅任务进度。
 3. 文案模型根据用户描述和“对方性别”生成场景标题、三句字幕、争吵方开场、四个智能体提示词、胜利条件和三类图片提示词。
-4. 图片模型分别根据 `artPrompt`、`thumbnailArtPrompt`、`opponentArtPrompt` 生成沉浸背景、首页小图和右侧争吵人形象。
+4. 图片模型先根据 `thumbnailArtPrompt` 生成包含完整环境和对方角色的视觉母图，并直接作为首页小图；随后把母图作为图片输入，结合 `artPrompt` 编辑派生无人沉浸背景，再结合 `opponentArtPrompt` 编辑派生同一角色。右侧人物的编辑 prompt 会追加服务端固定的 `#00ff00` 绿幕约束，最后抠成透明 PNG。三个步骤各自最多尝试两次。
 5. 服务端先把文案和图片写入 `data/staging/` 暂存目录，校验完整后再原子发布到 `scene-configs/generated/<sceneId>/`。
 6. 场景页面创建匿名练习会话，服务端把会话、消息和复盘持久化到 SQLite。
 7. 用户与争吵方对话时，服务端从数据库读取可信上下文并调用争吵方智能体流式返回。
@@ -150,7 +150,7 @@ npm run voice:start
 - `winCondition`：必须能从对方言行观察确认的场景胜利条件
 - `refereePrompt`：裁判在该场景中重点检查的让步、边界或行动承诺
 - `art`、`thumbnailArt`、`opponentArt`
-- `artPrompt`、`thumbnailArtPrompt`、`opponentArtPrompt`
+- `artPrompt`、`thumbnailArtPrompt`、`opponentArtPrompt`：`thumbnailArtPrompt` 定义视觉母图，`artPrompt` 定义从母图移除人物后的沉浸背景，`opponentArtPrompt` 定义从母图提取的同一人物；绿幕背景和抠图限制由服务端固定追加。
 
 ## 安全注意
 

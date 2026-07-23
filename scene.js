@@ -14,6 +14,7 @@ const modelState = document.querySelector("#modelState");
 const analysisLoading = document.querySelector("#analysisLoading");
 const analysisReport = document.querySelector("#analysisReport");
 const recordButton = document.querySelector("#recordButton");
+const voiceBox = document.querySelector("#voiceBox");
 const voiceOrbit = document.querySelector("#voiceOrbit");
 const voiceStatus = document.querySelector("#voiceStatus");
 const voiceHint = document.querySelector("#voiceHint");
@@ -142,6 +143,7 @@ function setReadyState(message) {
 }
 
 function setVoiceState(state, status, hint = "") {
+  voiceBox.dataset.state = state;
   voiceOrbit.dataset.state = state;
   voiceStatus.textContent = status;
   if (hint) voiceHint.textContent = hint;

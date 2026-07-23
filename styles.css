@@ -248,3 +248,130 @@ body{background:#050505}
     font-size:19px;
   }
 }
+
+/* 沉浸模式录音提示：保留状态反馈，把视觉重量压缩到底部细线。 */
+.scene-page[data-mode="immersive"] .voice-box{
+  position:absolute;
+  left:0;
+  right:0;
+  bottom:clamp(16px,2.8vh,28px);
+  width:min(220px,58vw);
+  margin:0 auto;
+  padding:0;
+  transform:none;
+  border:0!important;
+  background:transparent!important;
+  box-shadow:none!important;
+  backdrop-filter:none!important;
+}
+.scene-page[data-mode="immersive"] .voice-head{
+  min-height:0;
+}
+.scene-page[data-mode="immersive"] .voice-head>div{
+  bottom:calc(100% + 8px);
+  width:260px;
+  opacity:0!important;
+  transition:opacity .18s ease;
+}
+.scene-page[data-mode="immersive"] .voice-head p{
+  margin:0;
+  font-size:11px;
+  line-height:1.2;
+  white-space:nowrap;
+}
+.scene-page[data-mode="immersive"] .voice-orbit{
+  --voice-level:0;
+  position:relative;
+  width:184px;
+  height:14px;
+  margin:0 auto;
+  border:0;
+  border-radius:0;
+  background:none;
+  box-shadow:none;
+  overflow:visible;
+  opacity:0;
+  visibility:hidden;
+  transition:opacity .18s ease,visibility 0s linear .18s;
+}
+.scene-page[data-mode="immersive"] .voice-orbit::before,
+.scene-page[data-mode="immersive"] .voice-orbit::after{
+  content:"";
+  position:absolute;
+  left:50%;
+  top:50%;
+  transform:translate(-50%,-50%);
+  transform-origin:center;
+  pointer-events:none;
+}
+.scene-page[data-mode="immersive"] .voice-orbit::before{
+  width:100%;
+  height:1px;
+  background:linear-gradient(90deg,transparent,rgba(247,241,229,.2) 18%,rgba(247,241,229,.34) 50%,rgba(247,241,229,.2) 82%,transparent);
+}
+.scene-page[data-mode="immersive"] .voice-orbit::after{
+  width:48%;
+  height:2px;
+  opacity:.14;
+  background:linear-gradient(90deg,transparent,rgba(232,223,204,.92),transparent);
+  box-shadow:0 0 8px rgba(232,223,204,.22);
+  transform:translate(-50%,-50%) scaleX(calc(.3 + var(--voice-level)*.7));
+  transition:opacity .12s ease,transform .08s ease,box-shadow .12s ease;
+}
+.scene-page[data-mode="immersive"] .voice-bars,
+.scene-page[data-mode="immersive"] .voice-core{
+  display:none;
+}
+.scene-page[data-mode="immersive"] .voice-hint{
+  display:none;
+}
+.scene-page[data-mode="immersive"] .voice-box[data-state="listening"] .voice-head>div,
+.scene-page[data-mode="immersive"] .voice-box[data-state="recording"] .voice-head>div{
+  opacity:.34!important;
+}
+.scene-page[data-mode="immersive"] .voice-box[data-state="listening"] .voice-orbit,
+.scene-page[data-mode="immersive"] .voice-box[data-state="recording"] .voice-orbit{
+  opacity:1;
+  visibility:visible;
+  transition-delay:0s;
+  border:0!important;
+  background:none!important;
+  box-shadow:none!important;
+}
+.scene-page[data-mode="immersive"] .voice-box[data-state="error"] .voice-head>div{
+  opacity:.46!important;
+}
+.scene-page[data-mode="immersive"] .voice-orbit[data-state="listening"]::after{
+  opacity:calc(.2 + var(--voice-level)*.42);
+  box-shadow:0 0 calc(5px + var(--voice-level)*10px) rgba(232,223,204,calc(.18 + var(--voice-level)*.28));
+  animation:voice-line-glimmer 1.9s ease-in-out infinite;
+}
+.scene-page[data-mode="immersive"] .voice-orbit[data-state="recording"]::after{
+  height:2px;
+  opacity:calc(.34 + var(--voice-level)*.5);
+  background:linear-gradient(90deg,transparent,rgba(247,241,229,.96),transparent);
+  box-shadow:0 0 calc(7px + var(--voice-level)*13px) rgba(247,241,229,calc(.22 + var(--voice-level)*.34));
+  animation:voice-line-glimmer .9s ease-in-out infinite;
+}
+@keyframes voice-line-glimmer{
+  50%{filter:brightness(1.7);transform:translate(-50%,-50%) scaleX(calc(.52 + var(--voice-level)*.48))}
+}
+@media(max-width:760px){
+  .scene-page[data-mode="immersive"] .voice-box{
+    bottom:18px;
+    width:min(196px,62vw);
+    margin:0;
+  }
+  .scene-page[data-mode="immersive"] .voice-orbit{
+    width:160px;
+    height:12px;
+  }
+  .scene-page[data-mode="immersive"] .voice-head>div{
+    width:220px;
+  }
+}
+@media(prefers-reduced-motion:reduce){
+  .scene-page[data-mode="immersive"] .voice-orbit::after{
+    animation:none!important;
+  }
+}
