@@ -58,8 +58,8 @@ http://127.0.0.1:4173/admin.html
 
 1. 用户进入首页并选择场景，再选择“训练模式”或“沉浸模式”。
 2. 创建新场景时，前端先创建持久生成任务，并通过 SSE 订阅任务进度。
-3. 文案模型生成场景标题、三句字幕、争吵方开场、四个智能体提示词、胜利条件和图片提示词。
-4. 图片模型根据 `artPrompt` 生成场景背景图。
+3. 文案模型根据用户描述和“对方性别”生成场景标题、三句字幕、争吵方开场、四个智能体提示词、胜利条件和三类图片提示词。
+4. 图片模型分别根据 `artPrompt`、`thumbnailArtPrompt`、`opponentArtPrompt` 生成沉浸背景、首页小图和右侧争吵人形象。
 5. 服务端先把文案和图片写入 `data/staging/` 暂存目录，校验完整后再原子发布到 `scene-configs/generated/<sceneId>/`。
 6. 场景页面创建匿名练习会话，服务端把会话、消息和复盘持久化到 SQLite。
 7. 用户与争吵方对话时，服务端从数据库读取可信上下文并调用争吵方智能体流式返回。
@@ -72,7 +72,7 @@ http://127.0.0.1:4173/admin.html
 ## 已实现功能
 
 - 三个内置场景：家庭边界、餐厅烟雾、深夜对峙
-- 每个场景拥有独立 URL，例如 `/scene/family`
+- 每个场景拥有独立 URL，例如 `/scene/phone-night`
 - 用户一句话生成新场景
 - 场景生成任务支持 SSE 进度推送和轮询兜底
 - 场景发布具备原子性，失败时不会暴露半成品
@@ -143,14 +143,14 @@ npm run voice:start
 
 - `title`、`kicker`、`intro`、`introLines`
 - `opponent`
-- `opponentGender`：争吵方性别
+- `opponentGender`：争吵方性别，会参与争吵文案和角色图片生成
 - `opponentPrompt`
 - `coachPrompt`
 - `analysisPrompt`
 - `winCondition`：必须能从对方言行观察确认的场景胜利条件
 - `refereePrompt`：裁判在该场景中重点检查的让步、边界或行动承诺
-- `art`
-- `artPrompt`
+- `art`、`thumbnailArt`、`opponentArt`
+- `artPrompt`、`thumbnailArtPrompt`、`opponentArtPrompt`
 
 ## 安全注意
 

@@ -1,0 +1,25 @@
+{
+  "id": "restaurant-smoking",
+  "source": "built-in",
+  "title": "这根烟，不能在这里抽。",
+  "kicker": "餐厅。邻座男士点起了烟。",
+  "intro": "烟味飘到你这桌，对方却像没看见你的皱眉。你不想把事情闹大，只想让他停止在室内吸烟。",
+  "introLines": [
+    "餐厅里人声很低，烟味却很明显。",
+    "邻座男士夹着烟，像这只是小事。",
+    "你走过去，准备把请求说清楚。"
+  ],
+  "opponent": "不就一根烟吗？你至于这么较真？",
+  "opponentGender": "male",
+  "opponentPrompt": "你是餐厅里正在室内吸烟的男士。用户来劝你不要在餐厅吸烟，你会不耐烦、轻描淡写、嫌用户多管闲事，可能说“不就一根烟吗”“你找店员去”“我马上就抽完”。你不能把抽烟行为安到用户身上，不能说用户才是抽烟的人。你可以防御和反问，但不要威胁、辱骂、骚扰或鼓励现实冲突升级。若用户表达清楚公共空间影响、提出具体请求或要求店员介入，你可以逐渐让步。",
+  "coachPrompt": "重点帮助用户在公共冲突里稳住事实和请求：说明烟味影响、明确要求停止室内吸烟，必要时请店员处理。建议要短、具体，避免道德审判和互骂。",
+  "analysisPrompt": "重点观察用户是否能区分事实、影响和请求，面对对方轻描淡写时是否保持清晰表达，是否能提出停止吸烟或请店员介入的可执行方案；所有倾向必须引用用户原话，不能做心理诊断。",
+  "winCondition": "对方明确同意停止在餐厅吸烟，熄灭香烟，移步室外，或接受店员介入并停止继续影响用户。",
+  "refereePrompt": "只在对方明确停止室内吸烟、熄烟、移步室外或接受店员处理时判赢；嘴上敷衍但继续抽、转移话题或反向指责都不算达成。",
+  "art": "assets/restaurant-smoking/immersive-bg.png",
+  "thumbnailArt": "assets/restaurant-smoking/home-card.png",
+  "opponentArt": "assets/restaurant-smoking/opponent-cutout.png",
+  "artPrompt": "Use case: illustration-story. Asset type: immersive mode full-screen scene background. Simple hand-drawn charcoal restaurant background: small restaurant, neighboring table, ashtray, cigarette smoke haze, no people, right third reserved for a male character cutout. Rough graphite pencil and charcoal sketch, monochrome black and gray textured paper, no text, no logo, no watermark.",
+  "thumbnailArtPrompt": "Use case: illustration-story. Asset type: homepage featured scene thumbnail. Simple hand-drawn charcoal and black ink collage thumbnail: a man smoking in a restaurant, annoyed and dismissive, smoky table, off-white torn paper cutout on black background, no text, no logo, no watermark.",
+  "opponentArtPrompt": "Use case: illustration-story. Asset type: right-side opponent character cutout. Monochrome hand-drawn adult man smoking in a restaurant, defensive and dismissive, holding a cigarette, three-quarter view facing left, black ink and graphite on off-white torn paper, isolated cutout, no text, no logo, no watermark."
+}

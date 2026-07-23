@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
-    <main class="experience" data-scene="restaurant" data-view="lobby">
+    <main class="experience" data-scene="phone-night" data-view="lobby">
       <section class="view lobby" aria-label="选择练习场景">
         <div class="lobby-backdrop" aria-hidden="true"></div>
         <header class="quiet-header">
@@ -15,25 +15,26 @@
           <a href="./admin.html">后台配置</a>
         </header>
 
-        <div class="scene-gallery">
-          <a class="hero-scene left-scene" href="/scene/restaurant">
-            <img src="./assets/restaurant-characters.png" alt="餐厅里飘来的烟雾" />
+        <div class="scene-gallery" aria-label="默认练习场景">
+          <a class="hero-scene default-scene left-scene" href="/scene/restaurant-smoking">
+            <img src="./assets/restaurant-smoking/home-card.png" alt="餐厅邻座吸烟" />
             <span>餐厅。邻座刚点起一根烟。</span>
           </a>
-          <a class="hero-scene right-scene" href="/scene/family">
-            <img src="./assets/family-characters.png" alt="家里的边界对话" />
-            <span>家里。有句话，你一直没说。</span>
+          <a class="hero-scene default-scene center-scene" href="/scene/phone-night">
+            <img src="./assets/sketch-default/home-card.png" alt="深夜情侣矛盾" />
+            <span>深夜。你准备找她沟通。</span>
+          </a>
+          <a class="hero-scene default-scene right-scene" href="/scene/roommate-gaming">
+            <img src="./assets/roommate-gaming/home-card.png" alt="半夜室友打游戏" />
+            <span>合租房。室友还在打游戏。</span>
           </a>
         </div>
 
         <div class="lobby-bottom">
-          <p class="overline">你造过的</p>
-          <p class="device-note">这扇门只记在这台设备上。进门后，把地址栏的链接存一份，换了设备，凭它照样推开。</p>
-          <nav class="scene-picks" id="localScenePicks" aria-label="你造过的场景">
-            <a href="/scene/family"><img src="./assets/family-characters.png" alt="" /><span>家里那句没说出口的话</span></a>
-            <a class="selected" href="/scene/restaurant"><img src="./assets/restaurant-characters.png" alt="" /><span>臭烟子风波</span></a>
-            <a href="/scene/night"><img src="./assets/night-characters.png" alt="" /><span>深夜对峙</span></a>
-          </nav>
+          <section class="lobby-own-scenes" id="localSceneSection" aria-label="你造过的场景" hidden>
+            <p class="overline">你造过的</p>
+            <nav class="scene-picks" id="localScenePicks" aria-label="你造过的场景"></nav>
+          </section>
           <a class="entry-question" href="/create">……还有谁，是你一直没吵赢的？</a>
           <p class="entry-hint">一句话，造一场只属于你的架</p>
         </div>

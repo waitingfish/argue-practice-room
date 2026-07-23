@@ -44,7 +44,7 @@ async function saveCreatedScene(job) {
     id,
     url: job.sceneUrl,
     title: input.value.trim().slice(0, 36) || "新造的场景",
-    art: "assets/night-characters.png",
+    art: "assets/sketch-default/home-card.png",
     createdAt: new Date().toISOString()
   };
 
@@ -55,7 +55,7 @@ async function saveCreatedScene(job) {
       scene = {
         ...scene,
         title: detail.title || scene.title,
-        art: detail.art || scene.art
+        art: detail.thumbnailArt || detail.art || scene.art
       };
     }
   } catch {
@@ -135,14 +135,14 @@ function subscribe(jobId, eventsUrl = `/api/scene-jobs/${jobId}/events`) {
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
   const prompt = input.value.trim();
-  const voice = document.querySelector("input[name=voice]:checked").value;
+  const opponentGender = document.querySelector("input[name=opponentGender]:checked").value;
   if (!prompt) return;
 
   const previous = readPending();
-  const idempotencyKey = previous?.prompt === prompt && previous?.voice === voice
+  const idempotencyKey = previous?.prompt === prompt && previous?.opponentGender === opponentGender
     ? previous.idempotencyKey
     : crypto.randomUUID();
-  savePending({ idempotencyKey, prompt, voice });
+  savePending({ idempotencyKey, prompt, opponentGender });
   progress.hidden = false;
   button.disabled = true;
   button.textContent = "正在创建任务…";
@@ -153,7 +153,7 @@ form.addEventListener("submit", async (event) => {
     const response = await fetch("/api/scene-jobs", {
       method: "POST",
       headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey },
-      body: JSON.stringify({ prompt, voice })
+      body: JSON.stringify({ prompt, opponentGender })
     });
     const job = await response.json();
     if (!response.ok) throw new Error(job.error || "无法创建生成任务");
@@ -169,8 +169,8 @@ form.addEventListener("submit", async (event) => {
 const pending = readPending();
 if (pending?.jobId) {
   input.value = pending.prompt || "";
-  const voice = document.querySelector(`input[name=voice][value="${CSS.escape(pending.voice || "无所谓")}"]`);
-  if (voice) voice.checked = true;
+  const opponentGender = document.querySelector(`input[name=opponentGender][value="${CSS.escape(pending.opponentGender || "unspecified")}"]`);
+  if (opponentGender) opponentGender.checked = true;
   progress.hidden = false;
   button.disabled = true;
   button.textContent = "正在恢复任务…";

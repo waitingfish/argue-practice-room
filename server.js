@@ -3,6 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const { URL } = require("node:url");
+const sharp = require("sharp");
 const { createDatabase } = require("./database");
 
 const root = __dirname;
@@ -428,9 +429,6 @@ function sanitizeMessages(messages) {
 
 function validateOpponentReply(scene, content) {
   const text = String(content || "");
-  if (scene.id === "restaurant" && /(?:公共场合|餐厅|这里|这儿)[^。！？\n]*(?:抽烟|吸烟)[^。！？\n]*(?:你不对|你还有理|还有理|不对|违法|违规)|你[^。！？\n]*(?:抽烟|吸烟)[^。！？\n]*(?:有理|不对|违法|违规)/.test(text)) {
-    throw new Error("争吵方回复发生角色反转");
-  }
   if (/用户似乎|这一轮练习|可以结束|作为AI|复盘|评分/.test(text) || /^[（(]/.test(text.trim())) {
     throw new Error("争吵方回复包含旁白或练习元信息");
   }
@@ -713,6 +711,7 @@ function parseScene(content) {
   const clean = extractJsonObject(content);
   const result = JSON.parse(clean);
   if (!result.title || !result.opponent || !Array.isArray(result.introLines) || result.introLines.length !== 3) throw new Error("文案模型没有按要求返回场景结构");
+  const artPrompt = String(result.artPrompt || "charcoal and ink narrative scene").slice(0, 1200);
   return normalizeSceneVoice({
     title: String(result.title).slice(0, 80), kicker: String(result.kicker || "新的对峙。"), intro: String(result.intro || "把你想说的话留在这里。"),
     introLines: result.introLines.map((line) => String(line).slice(0, 70)),
@@ -723,8 +722,16 @@ function parseScene(content) {
     winCondition: String(result.winCondition || "对方明确接受用户提出的合理边界或行动请求。").slice(0, 1000),
     refereePrompt: String(result.refereePrompt || "重点确认对方是否明确让步，以及用户是否得到可执行的结果；不要把辱骂或压制判为胜利。").slice(0, 1000),
     opponentGender: String(result.opponentGender || "unspecified"),
-    artPrompt: String(result.artPrompt || "charcoal and ink narrative scene").slice(0, 1200)
+    artPrompt,
+    thumbnailArtPrompt: String(result.thumbnailArtPrompt || artPrompt).slice(0, 1200),
+    opponentArtPrompt: String(result.opponentArtPrompt || artPrompt).slice(0, 1200)
   });
+}
+
+function genderLabel(gender) {
+  if (gender === "male") return "男性";
+  if (gender === "female") return "女性";
+  return "不限定性别";
 }
 
 function normalizeSceneVoice(scene) {
@@ -735,14 +742,18 @@ function normalizeSceneVoice(scene) {
   };
 }
 
-async function createSceneText(config, prompt, voice) {
+async function createSceneText(config, prompt, opponentGender) {
+  const preferredGender = ["male", "female"].includes(opponentGender) ? opponentGender : "unspecified";
+  const genderCopy = genderLabel(preferredGender);
   const response = await fetch(buildEndpoint(config.baseUrl, "/chat/completions"), {
     method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${config.apiKey}` },
-    body: JSON.stringify({ model: config.model, temperature: 0.85, messages: [{ role: "system", content: "你是互动叙事场景编剧。可以在内部进行必要推理，但最终回复只能包含一个严格 JSON 对象，不要 markdown，不要解释，不要把思考过程写进结果：{title,kicker,intro,introLines:[三句中文],opponent,opponentPrompt,coachPrompt,analysisPrompt,winCondition,refereePrompt,opponentGender,artPrompt}。文案简体中文，克制、具体、非暴力；opponent 是对方的第一句；opponentGender 只能是 male 或 female，并遵循用户声音偏好；opponentPrompt 描述争吵方的人设、说话方式和施压方式；coachPrompt 描述实时帮忙专家应该重点教什么；analysisPrompt 描述复盘分析师在这个场景中要重点观察的表达模式，不能做心理诊断；winCondition 描述必须由对方言行可观察确认的场景胜利条件，不能把辱骂或压制当胜利；refereePrompt 描述裁判在本场景应重点检查的让步、边界或行动承诺；artPrompt 用英文，描述原创的 charcoal and ink hand-drawn collage illustration, wide 16:9, two people in conflict, no text, no logo, no watermark。" }, { role: "user", content: `用户描述：${prompt}\n对方声音偏好：${voice}` }] }), signal: AbortSignal.timeout(30000)
+    body: JSON.stringify({ model: config.model, temperature: 0.85, messages: [{ role: "system", content: "你是互动叙事场景编剧。可以在内部进行必要推理，但最终回复只能包含一个严格 JSON 对象，不要 markdown，不要解释，不要把思考过程写进结果：{title,kicker,intro,introLines:[三句中文],opponent,opponentPrompt,coachPrompt,analysisPrompt,winCondition,refereePrompt,opponentGender,artPrompt,thumbnailArtPrompt,opponentArtPrompt}。文案简体中文，克制、具体、非暴力；opponent 是对方的第一句，只能是对用户说的台词，不能包含括号动作、旁白、角色名或舞台说明；opponentGender 只能是 male、female 或 unspecified，必须遵循用户指定的对方性别；opponentPrompt 描述争吵方的人设、关系身份、说话方式和施压/防御方式，并明确对方性别；coachPrompt 描述实时帮忙专家应该重点教什么；analysisPrompt 描述复盘分析师在这个场景中要重点观察的表达模式，不能做心理诊断；winCondition 描述必须由对方言行可观察确认的场景胜利条件，不能把辱骂或压制当胜利；refereePrompt 描述裁判在本场景应重点检查的让步、边界或行动承诺。三类图片 prompt 必须都是英文，并保持同一黑白手绘风格：artPrompt 是沉浸模式 16:9 背景图，必须是不含人物的环境背景，右侧预留角色空间；thumbnailArtPrompt 是首页小图，包含场景关系和冲突瞬间，可出现对方但不能有文字；opponentArtPrompt 是右侧争吵人形象图，必须生成单个对方角色，性别与 opponentGender 一致，三分之二或全身，黑白手绘剪贴/纸片边缘，不能有文字、logo、水印。" }, { role: "user", content: `用户描述：${prompt}\n对方性别偏好：${genderCopy}\n规范化性别：${preferredGender}` }] }), signal: AbortSignal.timeout(30000)
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data.error?.message || `文案模型返回 ${response.status}`);
-  return parseScene(readChatContent(data, { allowThinking: true }));
+  const scene = parseScene(readChatContent(data, { allowThinking: true }));
+  if (preferredGender !== "unspecified") scene.opponentGender = preferredGender;
+  return scene;
 }
 
 function sceneConfigPath(id) {
@@ -770,13 +781,13 @@ function detectImageFormat(buffer) {
   throw new Error("图片模型返回了不支持的文件格式");
 }
 
-async function createSceneImage(config, artPrompt) {
+async function createSceneImage(config, artPrompt, size = "1536x1024") {
   const apiKey = config.imageApiKey || config.apiKey;
   if (!apiKey) throw new Error("未配置图片模型 API Key");
   const timeoutMs = Number(config.imageTimeoutSeconds || 180) * 1000;
   const response = await fetch(buildEndpoint(config.imageBaseUrl || config.baseUrl, "/images/generations"), {
     method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-    body: JSON.stringify({ model: config.imageModel || "gpt-image-1", prompt: artPrompt, size: "1536x1024", response_format: "b64_json" }), signal: AbortSignal.timeout(timeoutMs)
+    body: JSON.stringify({ model: config.imageModel || "gpt-image-1", prompt: artPrompt, size, response_format: "b64_json" }), signal: AbortSignal.timeout(timeoutMs)
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data.error?.message || `图片模型返回 ${response.status}`);
@@ -796,8 +807,93 @@ async function createSceneImage(config, artPrompt) {
   return { buffer, ...detectImageFormat(buffer) };
 }
 
+function cutoutImagePrompt(prompt) {
+  return [
+    String(prompt || ""),
+    "Output requirement: transparent background PNG with alpha channel.",
+    "Only the single character and its off-white torn-paper cutout edge should remain visible.",
+    "No rectangular canvas, no white/gray/black background panel, no drop shadow, no text, no logo, no watermark."
+  ].join(" ").slice(0, 1800);
+}
+
+async function makeCutoutTransparent(buffer) {
+  const image = sharp(buffer).ensureAlpha();
+  const { data, info } = await image.raw().toBuffer({ resolveWithObject: true });
+  const { width, height, channels } = info;
+  const total = width * height;
+  const remove = new Uint8Array(total);
+  const queue = [];
+  let head = 0;
+
+  function pixel(index) {
+    const offset = index * channels;
+    const r = data[offset];
+    const g = data[offset + 1];
+    const b = data[offset + 2];
+    const a = data[offset + 3];
+    const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
+    return { r, g, b, a, luminance, spread: Math.max(r, g, b) - Math.min(r, g, b) };
+  }
+
+  const sampleIndexes = [];
+  for (let x = 0; x < width; x += Math.max(1, Math.floor(width / 80))) {
+    sampleIndexes.push(x, (height - 1) * width + x);
+  }
+  for (let y = 0; y < height; y += Math.max(1, Math.floor(height / 80))) {
+    sampleIndexes.push(y * width, y * width + width - 1);
+  }
+  const borderLuminance = sampleIndexes.reduce((sum, index) => sum + pixel(index).luminance, 0) / sampleIndexes.length;
+  const lightBackdrop = borderLuminance >= 120;
+
+  function isRemovable(index) {
+    const { r, g, b, a, luminance, spread } = pixel(index);
+    if (a === 0) return true;
+    if (lightBackdrop) {
+      const neutral = spread <= 4 && Math.abs(r - g) <= 4 && Math.abs(r - b) <= 4;
+      return neutral && luminance > 235;
+    }
+    return luminance < 86 && Math.max(r, g, b) < 106;
+  }
+
+  function enqueue(index) {
+    if (remove[index] || !isRemovable(index)) return;
+    remove[index] = 1;
+    queue.push(index);
+  }
+
+  for (let x = 0; x < width; x++) {
+    enqueue(x);
+    enqueue((height - 1) * width + x);
+  }
+  for (let y = 0; y < height; y++) {
+    enqueue(y * width);
+    enqueue(y * width + width - 1);
+  }
+
+  while (head < queue.length) {
+    const index = queue[head++];
+    const x = index % width;
+    if (x > 0) enqueue(index - 1);
+    if (x + 1 < width) enqueue(index + 1);
+    if (index >= width) enqueue(index - width);
+    if (index + width < total) enqueue(index + width);
+  }
+
+  const alpha = Buffer.alloc(total, 255);
+  for (let index = 0; index < total; index++) {
+    if (remove[index]) alpha[index] = 0;
+  }
+
+  const softenedAlpha = await sharp(alpha, { raw: { width, height, channels: 1 } }).blur(0.45).raw().toBuffer();
+  for (let index = 0; index < total; index++) {
+    data[index * channels + 3] = softenedAlpha[index];
+  }
+
+  return sharp(data, { raw: { width, height, channels } }).png().toBuffer();
+}
+
 function validateSceneDefinition(scene) {
-  const requiredStrings = ["title", "kicker", "intro", "opponent", "opponentPrompt", "coachPrompt", "analysisPrompt", "winCondition", "refereePrompt", "opponentGender", "artPrompt", "art"];
+  const requiredStrings = ["title", "kicker", "intro", "opponent", "opponentPrompt", "coachPrompt", "analysisPrompt", "winCondition", "refereePrompt", "opponentGender", "artPrompt", "thumbnailArtPrompt", "opponentArtPrompt", "art", "thumbnailArt", "opponentArt"];
   for (const key of requiredStrings) {
     if (!String(scene[key] || "").trim()) throw new Error(`场景配置缺少字段：${key}`);
   }
@@ -806,10 +902,35 @@ function validateSceneDefinition(scene) {
   }
 }
 
-function stagedImage(stagePath) {
+function stagedImage(stagePath, baseName) {
   if (!fs.existsSync(stagePath)) return null;
-  const name = fs.readdirSync(stagePath).find((item) => /^background\.(png|jpg|webp)$/.test(item));
+  const pattern = new RegExp(`^${baseName}\\.(png|jpg|webp)$`);
+  const name = fs.readdirSync(stagePath).find((item) => pattern.test(item));
   return name ? path.join(stagePath, name) : null;
+}
+
+async function ensureSceneImage(stagePath, jobId, scene, promptKey, baseName, size, progress, message, options = {}) {
+  let imagePath = stagedImage(stagePath, baseName);
+  if (imagePath) {
+    if (!options.transparentCutout) return imagePath;
+    const converted = await makeCutoutTransparent(fs.readFileSync(imagePath));
+    const transparentPath = path.join(stagePath, `${baseName}.png`);
+    durableWriteFile(transparentPath, converted);
+    if (imagePath !== transparentPath) fs.unlinkSync(imagePath);
+    return transparentPath;
+  }
+  updateJob(jobId, { status: "generating_image", progress, message });
+  const imagePrompt = options.transparentCutout ? cutoutImagePrompt(scene[promptKey]) : scene[promptKey];
+  const image = await createSceneImage(readConfig(), imagePrompt, size);
+  if (options.transparentCutout) {
+    const converted = await makeCutoutTransparent(image.buffer);
+    imagePath = path.join(stagePath, `${baseName}.png`);
+    durableWriteFile(imagePath, converted);
+    return imagePath;
+  }
+  imagePath = path.join(stagePath, `${baseName}.${image.extension}`);
+  durableWriteFile(imagePath, image.buffer);
+  return imagePath;
 }
 
 async function runSceneJob(id) {
@@ -832,31 +953,33 @@ async function runSceneJob(id) {
     } else {
       job = updateJob(id, { status: "generating_text", progress: 20, message: "正在生成场景文案", error: null });
       const config = readConfig();
-      scene = await createSceneText(config, job.prompt, job.voice);
+      scene = await createSceneText(config, job.prompt, job.opponentGender);
       atomicWriteJson(draftPath, scene);
     }
 
-    let imagePath = stagedImage(stagePath);
-    if (!imagePath) {
-      job = updateJob(id, { status: "generating_image", progress: 55, message: "文案已完成，正在生成场景画面" });
-      const image = await createSceneImage(readConfig(), scene.artPrompt);
-      imagePath = path.join(stagePath, `background.${image.extension}`);
-      durableWriteFile(imagePath, image.buffer);
-    }
+    const backgroundPath = await ensureSceneImage(stagePath, id, scene, "artPrompt", "background", "1536x1024", 45, "文案已完成，正在生成沉浸背景");
+    const thumbnailPath = await ensureSceneImage(stagePath, id, scene, "thumbnailArtPrompt", "thumbnail", "1536x1024", 62, "正在生成首页小图");
+    const opponentPath = await ensureSceneImage(stagePath, id, scene, "opponentArtPrompt", "opponent", "1024x1536", 76, "正在生成争吵人形象", { transparentCutout: true });
 
-    const imageFormat = detectImageFormat(fs.readFileSync(imagePath));
+    const backgroundFormat = detectImageFormat(fs.readFileSync(backgroundPath));
+    const thumbnailFormat = detectImageFormat(fs.readFileSync(thumbnailPath));
+    const opponentFormat = detectImageFormat(fs.readFileSync(opponentPath));
     scene = {
       id: job.sceneId,
       source: "generated",
       ...scene,
-      art: `scene-assets/${job.sceneId}/background.${imageFormat.extension}`
+      art: `scene-assets/${job.sceneId}/background.${backgroundFormat.extension}`,
+      thumbnailArt: `scene-assets/${job.sceneId}/thumbnail.${thumbnailFormat.extension}`,
+      opponentArt: `scene-assets/${job.sceneId}/opponent.${opponentFormat.extension}`
     };
     atomicWriteJson(path.join(stagePath, "scene.json"), scene);
 
     updateJob(id, { status: "validating", progress: 80, message: "正在检查场景完整性" });
     const persistedScene = JSON.parse(fs.readFileSync(path.join(stagePath, "scene.json"), "utf8"));
     validateSceneDefinition(persistedScene);
-    detectImageFormat(fs.readFileSync(imagePath));
+    detectImageFormat(fs.readFileSync(backgroundPath));
+    detectImageFormat(fs.readFileSync(thumbnailPath));
+    detectImageFormat(fs.readFileSync(opponentPath));
 
     updateJob(id, { status: "publishing", progress: 95, message: "正在发布完整场景" });
     if (fs.existsSync(draftPath)) fs.unlinkSync(draftPath);
@@ -1307,6 +1430,7 @@ async function handleApi(request, response, pathname) {
       });
     }
 
+    const opponentGender = ["male", "female"].includes(payload.opponentGender) ? payload.opponentGender : "unspecified";
     const now = new Date().toISOString();
     const job = {
       id: `job-${crypto.randomUUID()}`,
@@ -1315,7 +1439,7 @@ async function handleApi(request, response, pathname) {
       progress: 5,
       message: "任务已创建，等待生成",
       prompt: prompt.slice(0, 3000),
-      voice: String(payload.voice || "无所谓").slice(0, 20),
+      opponentGender,
       sceneId: `scene-${crypto.randomUUID()}`,
       sceneUrl: null,
       error: null,
@@ -1499,8 +1623,6 @@ async function handleApi(request, response, pathname) {
           streamHeaders(response);
           started = true;
           response.write(reply);
-        } else if (scene.id === "restaurant") {
-          reply = await callModel(config, scene, argumentMessagesForModel(sessionId), "opponent");
         } else {
           await streamModel(config, scene, argumentMessagesForModel(sessionId), (chunk) => {
             if (!started) { streamHeaders(response); started = true; }
@@ -1732,7 +1854,7 @@ const server = http.createServer(async (request, response) => {
       response.writeHead(404); return response.end("Not found");
     }
 
-    const sceneAsset = pathname.match(/^\/scene-assets\/([a-z0-9-]+)\/(background\.(?:png|jpg|webp))$/);
+    const sceneAsset = pathname.match(/^\/scene-assets\/([a-z0-9-]+)\/((?:background|thumbnail|opponent)\.(?:png|jpg|webp))$/);
     if (sceneAsset) {
       const packageDir = publishedSceneDir(sceneAsset[1]);
       const assetPath = path.join(packageDir, sceneAsset[2]);

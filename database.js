@@ -111,7 +111,7 @@ function createDatabase(filePath) {
       progress INTEGER NOT NULL,
       message TEXT NOT NULL,
       prompt TEXT NOT NULL,
-      voice TEXT NOT NULL,
+      opponent_gender TEXT NOT NULL,
       scene_id TEXT NOT NULL,
       scene_url TEXT,
       error TEXT,
@@ -124,6 +124,10 @@ function createDatabase(filePath) {
   const sessionColumns = tableColumns(db, "sessions");
   if (!sessionColumns.includes("mode")) {
     db.exec("ALTER TABLE sessions ADD COLUMN mode TEXT NOT NULL DEFAULT 'training'");
+  }
+  const jobColumns = tableColumns(db, "scene_jobs");
+  if (jobColumns.includes("voice") && !jobColumns.includes("opponent_gender")) {
+    db.exec("ALTER TABLE scene_jobs RENAME COLUMN voice TO opponent_gender");
   }
   dropMessageSpeechStyleColumn(db);
 
@@ -156,7 +160,7 @@ function createDatabase(filePath) {
     findJobByKey: db.prepare("SELECT * FROM scene_jobs WHERE idempotency_key = ?"),
     listRecoverableJobs: db.prepare("SELECT * FROM scene_jobs WHERE status NOT IN ('completed', 'failed') ORDER BY created_at"),
     saveJob: db.prepare(`
-      INSERT INTO scene_jobs (id, idempotency_key, status, progress, message, prompt, voice, scene_id, scene_url, error, created_at, updated_at)
+      INSERT INTO scene_jobs (id, idempotency_key, status, progress, message, prompt, opponent_gender, scene_id, scene_url, error, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         status = excluded.status, progress = excluded.progress, message = excluded.message,
@@ -188,7 +192,7 @@ function createDatabase(filePath) {
     if (!row) return null;
     return {
       id: row.id, idempotencyKey: row.idempotency_key, status: row.status,
-      progress: Number(row.progress), message: row.message, prompt: row.prompt, voice: row.voice,
+      progress: Number(row.progress), message: row.message, prompt: row.prompt, opponentGender: row.opponent_gender,
       sceneId: row.scene_id, sceneUrl: row.scene_url, error: row.error,
       createdAt: row.created_at, updatedAt: row.updated_at
     };
@@ -318,7 +322,7 @@ function createDatabase(filePath) {
     listRecoverableJobs() { return statements.listRecoverableJobs.all().map(mapJob); },
     saveJob(job) {
       const updatedAt = job.updatedAt || nowIso();
-      statements.saveJob.run(job.id, job.idempotencyKey, job.status, job.progress, job.message, job.prompt, job.voice, job.sceneId, job.sceneUrl || null, job.error || null, job.createdAt, updatedAt);
+      statements.saveJob.run(job.id, job.idempotencyKey, job.status, job.progress, job.message, job.prompt, job.opponentGender, job.sceneId, job.sceneUrl || null, job.error || null, job.createdAt, updatedAt);
       return this.getJob(job.id);
     }
   };

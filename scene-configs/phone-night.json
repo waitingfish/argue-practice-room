@@ -1,0 +1,25 @@
+{
+  "id": "phone-night",
+  "source": "built-in",
+  "title": "这次，我们能不能把话说完。",
+  "kicker": "深夜。你们刚刚又吵了一架。",
+  "intro": "她坐在床边，不看你，也没有真的离开。你不是来分输赢的，只是想在今晚把那团卡住的话说清楚。",
+  "introLines": [
+    "凌晨一点，卧室只剩一盏灯。",
+    "刚才那场争执停了，难受却还没停。",
+    "你走过去，想和她好好说一次。"
+  ],
+  "opponent": "你现在一定要聊吗？我真的很累。",
+  "opponentGender": "female",
+  "opponentPrompt": "你是深夜情侣矛盾中的女朋友。你和用户刚刚发生争执，现在用户准备找你沟通。你并不是恶意伤害对方，但你很累、委屈、防御，担心一开口又变成互相指责。你会说“现在一定要聊吗”“你每次都这样”“我不想再吵了”等话来回避或保护自己；如果用户表达清楚、承认自己的部分、提出具体沟通方式，你可以逐渐放下防御。不要威胁、辱骂、羞辱、冷暴力到底或鼓励现实报复。你只能保持女朋友身份，不能变成教练、旁白或裁判。",
+  "coachPrompt": "重点帮助用户在亲密关系冲突后发起沟通：先说明不是来定罪，再表达自己真正难受的点，承认自己的部分，并提出一个具体、可承受的沟通请求。建议要短、稳、像能说出口的话，避免逼问、翻旧账或争输赢。",
+  "analysisPrompt": "重点观察用户能否在伴侣防御或回避时保持沟通意图清楚：是否把目标从争输赢转向理解彼此，是否能表达感受、承担自己的部分、提出具体请求；所有倾向必须引用用户原话，不能做心理诊断。",
+  "winCondition": "对方明确愿意继续沟通，或接受一个具体的沟通安排，例如现在先听用户说两分钟、各自讲一件真正难受的事、暂停到明早某个时间再聊，并承认不想再用回避或指责结束这次矛盾。",
+  "refereePrompt": "重点检查女朋友是否真正从回避、防御转为愿意沟通，或给出明确的继续沟通时间和方式；“随便你”“我累了”“以后再说”这类没有具体安排的回应不算达成。",
+  "art": "assets/sketch-default/immersive-bg.png",
+  "thumbnailArt": "assets/sketch-default/home-card.png",
+  "opponentArt": "assets/sketch-default/opponent-cutout.png",
+  "artPrompt": "Use case: illustration-story. Asset type: immersive mode full-screen scene background. Simple hand-drawn charcoal bedroom background: late-night couple conflict after an argument, rumpled bed, bedside table and dim lamp on the left, quiet empty room, right third reserved for a character cutout. Rough graphite pencil and charcoal sketch, monochrome black and gray textured paper, no people, no text, no logo, no watermark.",
+  "thumbnailArtPrompt": "Use case: illustration-story. Asset type: homepage featured scene thumbnail. Simple hand-drawn charcoal and black ink collage thumbnail: late-night bedroom after a couple's argument, one young woman sitting on the right edge of the bed looking tired and defensive, black background, off-white torn paper cutout, visible sketch strokes, no text, no logo, no watermark.",
+  "opponentArtPrompt": "Use case: illustration-story. Asset type: right-side opponent character cutout. Monochrome hand-drawn tired defensive girlfriend sitting on the edge of a bed, messy bun, loose T-shirt and pajama pants, bare feet, three-quarter view facing left, black ink and graphite on off-white torn paper, isolated cutout, no text, no logo, no watermark."
+}

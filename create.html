@@ -12,11 +12,11 @@
       <form id="createForm" class="create-form">
         <h1>你想吵的那个人，那件事。<br />说出来。</h1>
         <textarea id="scenarioInput" required placeholder="比如：我室友总是不洗碗，脏碗在水池堆了一个星期，都发臭了……"></textarea>
-        <p>TA 开口，是——</p>
-        <div class="voice-options">
-          <label><input type="radio" name="voice" value="男声" />男声</label>
-          <label><input type="radio" name="voice" value="女声" />女声</label>
-          <label><input type="radio" name="voice" value="无所谓" checked />无所谓</label>
+        <p>TA 是——</p>
+        <div class="gender-options">
+          <label><input type="radio" name="opponentGender" value="male" />男性</label>
+          <label><input type="radio" name="opponentGender" value="female" />女性</label>
+          <label><input type="radio" name="opponentGender" value="unspecified" checked />无所谓</label>
         </div>
         <button type="submit" id="createButton">把 TA 叫出来</button>
         <section class="generation-progress" id="generationProgress" hidden aria-live="polite">

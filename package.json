@@ -11,5 +11,8 @@
     "voice:setup": "sh scripts/setup-local-whisper.sh",
     "voice:start": "sh scripts/start-local-whisper.sh",
     "start": "node server.js"
+  },
+  "dependencies": {
+    "sharp": "^0.34.4"
   }
 }

@@ -23,6 +23,7 @@ const outcomeDialog = document.querySelector("#outcomeDialog");
 const outcomeContinue = document.querySelector("#outcomeContinue");
 const outcomeSaveReplay = document.querySelector("#outcomeSaveReplay");
 const outcomeSaveStatus = document.querySelector("#outcomeSaveStatus");
+const opponentFigure = document.querySelector("#opponentFigure");
 
 let scene = null;
 let serviceStatus = {};
@@ -80,6 +81,12 @@ function reviewUnavailableReason() {
 
 function setArt(file) {
   document.documentElement.style.setProperty("--scene-art", `url("/${file.includes("/") ? file : `assets/${file}`}")`);
+}
+
+function imageUrl(file) {
+  const value = String(file || "").trim();
+  if (!value) return "";
+  return value.startsWith("/") ? value : `/${value.includes("/") ? value : `assets/${value}`}`;
 }
 
 function roleLabel(role) {
@@ -835,6 +842,11 @@ async function load() {
   if (!response.ok) return location.replace("/");
   scene = await response.json();
   setArt(scene.art);
+  if (opponentFigure) {
+    const opponentArt = imageUrl(scene.opponentArt);
+    opponentFigure.hidden = !opponentArt;
+    if (opponentArt) opponentFigure.src = opponentArt;
+  }
   ["introOne", "introTwo", "introThree"].forEach((id, index) => document.querySelector(`#${id}`).textContent = scene.introLines[index]);
   document.querySelector("#sceneKicker").textContent = scene.kicker;
   document.querySelector("#modeKicker").textContent = scene.kicker;

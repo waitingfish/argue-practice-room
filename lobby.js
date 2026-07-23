@@ -1,29 +1,5 @@
 const createdScenesKey = "argue-created-scenes";
 
-const fallbackScenes = [
-  {
-    id: "restaurant",
-    url: "/scene/restaurant",
-    title: "臭烟子风波",
-    art: "assets/restaurant-characters.png",
-    createdAt: ""
-  },
-  {
-    id: "family",
-    url: "/scene/family",
-    title: "家里那句没说出口的话",
-    art: "assets/family-characters.png",
-    createdAt: ""
-  },
-  {
-    id: "night",
-    url: "/scene/night",
-    title: "深夜对峙",
-    art: "assets/night-characters.png",
-    createdAt: ""
-  }
-];
-
 function readCreatedScenes() {
   try {
     const scenes = JSON.parse(localStorage.getItem(createdScenesKey) || "[]");
@@ -35,7 +11,7 @@ function readCreatedScenes() {
 
 function sceneArtUrl(art) {
   const value = String(art || "");
-  if (!value) return "assets/restaurant-characters.png";
+  if (!value) return "assets/sketch-default/home-card.png";
   return value.startsWith("/") ? value : `/${value}`;
 }
 
@@ -85,16 +61,15 @@ function renderScenePick(scene, isGenerated) {
 
 function renderCreatedScenes() {
   const list = document.querySelector("#localScenePicks");
+  const section = document.querySelector("#localSceneSection");
   if (!list) return;
 
   const generated = normalizedCreatedScenes().slice(0, 3);
-  const used = new Set(generated.map((scene) => scene.id || scene.url));
-  const filler = fallbackScenes.filter((scene) => !used.has(scene.id)).slice(0, 3 - generated.length);
-  const scenes = [...generated, ...filler];
-
   list.replaceChildren();
-  scenes.forEach((scene, index) => {
-    const item = renderScenePick(scene, index < generated.length);
+  if (section) section.hidden = generated.length === 0;
+
+  generated.forEach((scene, index) => {
+    const item = renderScenePick(scene, true);
     if (index === 0) item.classList.add("selected");
     list.append(item);
   });
