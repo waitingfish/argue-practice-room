@@ -76,6 +76,20 @@ function createDatabase(filePath) {
     );
     CREATE INDEX IF NOT EXISTS messages_session_id_id ON messages(session_id, id);
 
+    CREATE TABLE IF NOT EXISTS turns (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+      request_id TEXT NOT NULL,
+      user_content TEXT NOT NULL,
+      opponent_content TEXT,
+      status TEXT NOT NULL CHECK(status IN ('pending', 'streaming', 'completed', 'failed')),
+      error TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(session_id, request_id)
+    );
+    CREATE INDEX IF NOT EXISTS turns_session_id_id ON turns(session_id, id);
+
     CREATE TABLE IF NOT EXISTS reports (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
@@ -139,13 +153,78 @@ function createDatabase(filePath) {
     updateCoach: db.prepare("UPDATE sessions SET coach_enabled = ?, updated_at = ? WHERE id = ?"),
     claimSession: db.prepare("UPDATE sessions SET lock_token = ?, lock_until = ?, updated_at = ? WHERE id = ? AND (lock_until IS NULL OR lock_until < ?)"),
     releaseSession: db.prepare("UPDATE sessions SET lock_token = NULL, lock_until = NULL, updated_at = ? WHERE id = ? AND lock_token = ?"),
+    insertTurn: db.prepare("INSERT OR IGNORE INTO turns (session_id, request_id, user_content, status, created_at, updated_at) VALUES (?, ?, ?, 'pending', ?, ?)"),
+    getTurn: db.prepare("SELECT * FROM turns WHERE session_id = ? AND request_id = ?"),
+    markTurnStreaming: db.prepare("UPDATE turns SET status = 'streaming', error = NULL, updated_at = ? WHERE session_id = ? AND request_id = ? AND status IN ('pending', 'failed', 'streaming')"),
+    completeTurn: db.prepare("UPDATE turns SET status = 'completed', opponent_content = ?, error = NULL, updated_at = ? WHERE session_id = ? AND request_id = ?"),
+    failTurn: db.prepare("UPDATE turns SET status = 'failed', error = ?, updated_at = ? WHERE session_id = ? AND request_id = ? AND status != 'completed'"),
     insertMessage: db.prepare("INSERT OR IGNORE INTO messages (session_id, request_id, role, content, created_at) VALUES (?, ?, ?, ?, ?)"),
     getMessage: db.prepare("SELECT * FROM messages WHERE session_id = ? AND request_id = ? AND role = ?"),
-    listMessages: db.prepare("SELECT * FROM messages WHERE session_id = ? ORDER BY id"),
-    listArgumentMessages: db.prepare("SELECT * FROM messages WHERE session_id = ? AND role IN ('user', 'opponent') ORDER BY id"),
+    listMessages: db.prepare(`
+      SELECT m.* FROM messages m
+      WHERE m.session_id = ?
+        AND (
+          m.role != 'user'
+          OR EXISTS (
+            SELECT 1 FROM messages o
+            WHERE o.session_id = m.session_id
+              AND o.request_id = m.request_id
+              AND o.role = 'opponent'
+          )
+        )
+      ORDER BY m.id
+    `),
+    listArgumentMessages: db.prepare(`
+      SELECT m.* FROM messages m
+      WHERE m.session_id = ?
+        AND m.role IN ('user', 'opponent')
+        AND (
+          m.role = 'opponent'
+          OR EXISTS (
+            SELECT 1 FROM messages o
+            WHERE o.session_id = m.session_id
+              AND o.request_id = m.request_id
+              AND o.role = 'opponent'
+          )
+        )
+      ORDER BY m.id
+    `),
     listCoachMessages: db.prepare("SELECT * FROM messages WHERE session_id = ? AND role = 'coach' ORDER BY id"),
-    sessionCounts: db.prepare("SELECT COUNT(*) AS total, SUM(CASE WHEN role = 'user' THEN 1 ELSE 0 END) AS user_turns FROM messages WHERE session_id = ?"),
-    messageVersion: db.prepare("SELECT COALESCE(MAX(id), 0) AS version FROM messages WHERE session_id = ? AND role IN ('user', 'opponent')"),
+    sessionCounts: db.prepare(`
+      SELECT COUNT(*) AS total,
+        SUM(CASE WHEN role = 'user' AND EXISTS (
+          SELECT 1 FROM messages o
+          WHERE o.session_id = messages.session_id
+            AND o.request_id = messages.request_id
+            AND o.role = 'opponent'
+        ) THEN 1 ELSE 0 END) AS user_turns
+      FROM messages
+      WHERE session_id = ?
+        AND (
+          role != 'user'
+          OR EXISTS (
+            SELECT 1 FROM messages o
+            WHERE o.session_id = messages.session_id
+              AND o.request_id = messages.request_id
+              AND o.role = 'opponent'
+          )
+        )
+    `),
+    messageVersion: db.prepare(`
+      SELECT COALESCE(MAX(m.id), 0) AS version
+      FROM messages m
+      WHERE m.session_id = ?
+        AND m.role IN ('user', 'opponent')
+        AND (
+          m.role = 'opponent'
+          OR EXISTS (
+            SELECT 1 FROM messages o
+            WHERE o.session_id = m.session_id
+              AND o.request_id = m.request_id
+              AND o.role = 'opponent'
+          )
+        )
+    `),
     getReport: db.prepare("SELECT * FROM reports WHERE session_id = ? AND message_version = ?"),
     saveReport: db.prepare("INSERT INTO reports (session_id, message_version, report_json, model, created_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(session_id, message_version) DO UPDATE SET report_json = excluded.report_json, model = excluded.model, created_at = excluded.created_at"),
     markReviewed: db.prepare("UPDATE sessions SET status = 'reviewed', updated_at = ? WHERE id = ?"),
@@ -186,6 +265,20 @@ function createDatabase(filePath) {
 
   function mapMessage(row) {
     return row ? { id: Number(row.id), requestId: row.request_id, role: row.role, content: row.content, createdAt: row.created_at } : null;
+  }
+
+  function mapTurn(row) {
+    return row ? {
+      id: Number(row.id),
+      sessionId: row.session_id,
+      requestId: row.request_id,
+      userContent: row.user_content,
+      opponentContent: row.opponent_content || "",
+      status: row.status,
+      error: row.error || "",
+      createdAt: row.created_at,
+      updatedAt: row.updated_at
+    } : null;
   }
 
   function mapJob(row) {
@@ -259,8 +352,51 @@ function createDatabase(filePath) {
       return mapMessage(statements.getMessage.get(sessionId, requestId, role));
     },
 
+    beginTurn(sessionId, requestId, userContent) {
+      const content = String(userContent || "").slice(0, 12000);
+      const existingMessage = mapMessage(statements.getMessage.get(sessionId, requestId, "opponent"));
+      if (existingMessage) return { ...mapTurn(statements.getTurn.get(sessionId, requestId)), status: "completed", opponentContent: existingMessage.content };
+      const createdAt = nowIso();
+      statements.insertTurn.run(sessionId, requestId, content, createdAt, createdAt);
+      const turn = mapTurn(statements.getTurn.get(sessionId, requestId));
+      if (!turn) throw new Error("无法创建对话轮次");
+      if (turn.userContent !== content) {
+        const error = new Error("同一个 requestId 不能用于不同消息内容");
+        error.statusCode = 409;
+        throw error;
+      }
+      statements.markTurnStreaming.run(nowIso(), sessionId, requestId);
+      return mapTurn(statements.getTurn.get(sessionId, requestId));
+    },
+
+    completeTurn(sessionId, requestId, userContent, opponentContent) {
+      const user = String(userContent || "").slice(0, 12000);
+      const opponent = String(opponentContent || "").slice(0, 12000);
+      const updatedAt = nowIso();
+      db.exec("BEGIN IMMEDIATE");
+      try {
+        statements.insertMessage.run(sessionId, requestId, "user", user, updatedAt);
+        statements.insertMessage.run(sessionId, requestId, "opponent", opponent, updatedAt);
+        statements.completeTurn.run(opponent, updatedAt, sessionId, requestId);
+        db.exec("COMMIT");
+      } catch (error) {
+        db.exec("ROLLBACK");
+        throw error;
+      }
+      return mapTurn(statements.getTurn.get(sessionId, requestId));
+    },
+
+    failTurn(sessionId, requestId, errorMessage) {
+      statements.failTurn.run(String(errorMessage || "这一轮没有完成").slice(0, 1000), nowIso(), sessionId, requestId);
+      return mapTurn(statements.getTurn.get(sessionId, requestId));
+    },
+
     getMessage(sessionId, requestId, role) {
       return mapMessage(statements.getMessage.get(sessionId, requestId, role));
+    },
+
+    getTurn(sessionId, requestId) {
+      return mapTurn(statements.getTurn.get(sessionId, requestId));
     },
 
     listMessages(sessionId) {

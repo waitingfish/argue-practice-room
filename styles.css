@@ -28,9 +28,9 @@
 :root{--ink:#f7f1e5;--muted:rgba(247,241,229,.56);--line:rgba(247,241,229,.24);--accent:#e8dfcc;--scene-art:url("./assets/sketch-default/immersive-bg.png");font-family:"Songti SC","Noto Serif SC","STSong",serif}
 body{background:#050505}
 .lobby{padding:24px 4vw 22px;background:#050505}
-.lobby-backdrop{background:#050505;filter:none}
-.lobby-backdrop:before{content:"";position:absolute;inset:-5%;background:radial-gradient(circle at 52% 62%,rgba(255,255,255,.08),transparent 24%),repeating-linear-gradient(106deg,transparent 0 28px,rgba(255,255,255,.055) 30px 34px),repeating-linear-gradient(72deg,transparent 0 42px,rgba(255,255,255,.035) 44px 47px);opacity:.78;filter:blur(.2px)}
-.lobby-backdrop:after{background:linear-gradient(180deg,rgba(0,0,0,.08),rgba(0,0,0,.7) 72%,rgba(0,0,0,.94));mix-blend-mode:normal}
+.lobby-backdrop{background:linear-gradient(180deg,rgba(5,5,5,.2),rgba(5,5,5,.66) 78%,rgba(5,5,5,.92)),url("./assets/home-argument-bg.png") center/cover no-repeat;filter:none}
+.lobby-backdrop:before{content:"";position:absolute;inset:0;background:radial-gradient(circle at 50% 42%,rgba(255,255,255,.08),transparent 38%),linear-gradient(90deg,rgba(0,0,0,.34),transparent 26%,transparent 74%,rgba(0,0,0,.34));pointer-events:none}
+.lobby-backdrop:after{background:linear-gradient(180deg,rgba(0,0,0,.04),rgba(0,0,0,.38) 62%,rgba(0,0,0,.82));mix-blend-mode:normal}
 .quiet-header{letter-spacing:.08em}
 .scene-gallery{justify-content:center;min-height:48vh;margin-top:4vh}
 .hero-scene.default-scene{width:min(62vw,900px);transform:rotate(-1.2deg)}
@@ -92,7 +92,7 @@ body{background:#050505}
 }
 .experience[data-view="lobby"] .hero-scene.default-scene{
   width:100%;
-  max-width:520px;
+  max-width:480px;
   justify-self:center;
   transform:none;
 }
@@ -100,7 +100,7 @@ body{background:#050505}
   transform:rotate(-2.5deg) translateY(2.5vh);
 }
 .experience[data-view="lobby"] .hero-scene.center-scene{
-  max-width:560px;
+  max-width:510px;
   transform:rotate(.8deg) translateY(-1vh);
 }
 .experience[data-view="lobby"] .hero-scene.right-scene{
@@ -119,8 +119,9 @@ body{background:#050505}
   transform:rotate(2.2deg) translateY(calc(1.6vh - 8px));
 }
 .experience[data-view="lobby"] .hero-scene img{
-  aspect-ratio:1.62;
-  max-height:min(36vh,340px);
+  aspect-ratio:1.82;
+  max-height:min(32vh,300px);
+  object-fit:contain;
 }
 .experience[data-view="lobby"] .hero-scene span{
   margin-top:clamp(-34px,-3vw,-20px);
@@ -190,7 +191,7 @@ body{background:#050505}
   .experience[data-view="lobby"] .hero-scene.center-scene,
   .experience[data-view="lobby"] .hero-scene.right-scene{
     width:100%;
-    max-width:430px;
+    max-width:390px;
     transform:none;
   }
   .experience[data-view="lobby"] .hero-scene.default-scene:hover,
@@ -198,8 +199,8 @@ body{background:#050505}
     transform:translateY(-4px);
   }
   .experience[data-view="lobby"] .hero-scene img{
-    aspect-ratio:2.45;
-    max-height:18.5svh;
+    aspect-ratio:2;
+    max-height:17svh;
   }
   .experience[data-view="lobby"] .hero-scene span{
     margin-top:-24px;
@@ -376,6 +377,43 @@ body{background:#050505}
   }
 }
 
+.scene-page[data-phase="arena"] .arena-copy{
+  position:absolute;
+  left:50%;
+  top:clamp(70px,8vh,104px);
+  z-index:4;
+  width:min(860px,calc(100% - 48px));
+  margin:0;
+  transform:translateX(-50%);
+}
+.scene-page[data-phase="arena"] .arena-copy>p:last-child{
+  margin-top:14px;
+}
+.scene-page[data-phase="arena"]:not([data-mode="immersive"]) .conversation{
+  margin-top:clamp(190px,27vh,260px);
+}
+@media(max-width:760px){
+  .scene-page[data-phase="arena"] .arena-copy{
+    top:64px;
+    width:calc(100% - 36px);
+  }
+  .scene-page[data-phase="arena"] .scene-kicker{
+    margin-bottom:8px;
+    font-size:13px;
+  }
+  .scene-page[data-phase="arena"] .arena-copy h1{
+    font-size:clamp(25px,8vw,34px);
+  }
+  .scene-page[data-phase="arena"] .arena-copy>p:last-child{
+    margin-top:10px;
+    font-size:14px;
+    line-height:1.55;
+  }
+  .scene-page[data-phase="arena"]:not([data-mode="immersive"]) .conversation{
+    margin-top:220px;
+  }
+}
+
 /* Preset scene controls */
 .experience[data-view="lobby"] .scene-carousel{
   align-self:center;
@@ -386,6 +424,7 @@ body{background:#050505}
   width:min(100%,1640px);
   min-height:0;
   margin:0 auto;
+  transform:translateY(clamp(74px,10vh,116px));
 }
 .scene-nav{
   width:44px;
@@ -417,6 +456,7 @@ body{background:#050505}
     grid-template-columns:36px minmax(0,1fr) 36px;
     gap:8px;
     width:100%;
+    transform:translateY(3vh);
   }
   .scene-nav{
     width:36px;

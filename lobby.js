@@ -142,8 +142,8 @@ function bindPresetCarousel() {
   const next = document.querySelector(".scene-nav-next");
   if (!gallery || !prev || !next) return;
 
-  prev.addEventListener("click", () => scrollPresetScenes(-1));
-  next.addEventListener("click", () => scrollPresetScenes(1));
+  prev.addEventListener("click", () => scrollPresetScenes(1));
+  next.addEventListener("click", () => scrollPresetScenes(-1));
   window.addEventListener("resize", updatePresetNav);
   updatePresetNav();
 }

@@ -56,6 +56,8 @@ let argumentEnded = false;
 let endingImmersive = false;
 let immersiveStartPending = false;
 let immersivePreludeTimer = 0;
+let pendingTrainingTurn = null;
+let pendingVoiceTurn = null;
 const reviewRequiredTurns = 5;
 const autoVoiceStartLevel = 0.035;
 const autoVoiceStopLevel = 0.018;
@@ -69,6 +71,10 @@ function sessionStorageKey(mode = currentMode) {
 
 function userTurnCount() {
   return sessionMessages.filter((message) => message.role === "user").length;
+}
+
+function hasCompletedRequest(requestId) {
+  return sessionMessages.some((message) => message.requestId === requestId && message.role === "opponent");
 }
 
 function reviewUnavailableReason() {
@@ -96,7 +102,18 @@ function roleLabel(role) {
   return "争吵方";
 }
 
+function showLatestLineOnly() {
+  return currentMode === "immersive" && page.dataset.immersiveStarted === "true";
+}
+
+function displayMessages(messages) {
+  if (!showLatestLineOnly()) return messages;
+  const latest = [...messages].reverse().find((message) => message.role !== "coach");
+  return latest ? [latest] : [];
+}
+
 function addLine(role, text = "") {
+  if (showLatestLineOnly() && role !== "coach") conversation.replaceChildren();
   const element = document.createElement("article");
   element.className = `line ${role === "user" ? "self-line" : role === "coach" ? "coach-line" : "opponent-line"}`;
   const label = document.createElement("span");
@@ -111,7 +128,7 @@ function addLine(role, text = "") {
 
 function renderMessages(messages) {
   conversation.replaceChildren();
-  for (const message of messages) addLine(message.role, message.content);
+  for (const message of displayMessages(messages)) addLine(message.role, message.content);
 }
 
 function sessionHeaders(extra = {}) {
@@ -258,11 +275,11 @@ function showArgumentOutcome(verdict) {
   if (mediaRecorder?.state === "recording") mediaRecorder.stop();
   microphoneStream?.getTracks().forEach((track) => track.stop());
   microphoneStream = null;
-  document.querySelector("#outcomeCopy").textContent = verdict.resultCopy || "这场争吵终于有了结果。你把真正想守住的东西说清楚了，也让对方给出了回应。";
+  document.querySelector("#outcomeCopy").textContent = verdict.resultCopy || "这次表达有了结果。你把真正想守住的东西说清楚了，也让对方给出了回应。";
   document.querySelector("#outcomeMood").textContent = verdict.mood?.label || "终于松了一口气";
   argumentOutcome.hidden = false;
   page.dataset.argumentEnded = "true";
-  setVoiceState("ended", "裁判判定：这场争吵结束了", "你已经不需要继续回应");
+  setVoiceState("ended", "裁判判定：表达目标达成", "你已经不需要继续回应");
   if (recordButton) recordButton.disabled = true;
   updateReviewButton();
   outcomeContinue.disabled = false;
@@ -612,6 +629,23 @@ async function convertRecordingToWav(recording) {
   }
 }
 
+async function sendImmersiveText(text, requestId) {
+  addLine("user", text);
+  sessionMessages.push({ role: "user", content: text, requestId });
+  setVoiceState("thinking", "争吵方正在回应…", `识别结果：${text}`);
+  const reply = await streamAgent("messages", "opponent", { content: text, requestId });
+  sessionMessages.push({ role: "opponent", content: reply, requestId });
+  pendingVoiceTurn = null;
+  const verdictPromise = judgeImmersiveTurn().catch((error) => ({ error }));
+  await speakText(reply, requestId);
+  const verdictResult = await verdictPromise;
+  if (verdictResult?.error) {
+    setVoiceState("idle", "裁判暂时没有完成判定", "你可以继续回应；异常详情已记录在服务端");
+  } else if (verdictResult?.status === "won") {
+    showArgumentOutcome(verdictResult);
+  }
+}
+
 async function processRecording() {
   if (argumentEnded) return;
   stopAutoListening();
@@ -619,9 +653,11 @@ async function processRecording() {
   updateReviewButton();
   const mimeType = mediaRecorder.mimeType || recordedChunks[0]?.type || "audio/webm";
   const recording = new Blob(recordedChunks, { type: mimeType });
+  let requestId = "";
+  let text = "";
   try {
     const audio = await convertRecordingToWav(recording);
-    const requestId = `voice-${crypto.randomUUID()}`;
+    requestId = `voice-${crypto.randomUUID()}`;
     const transcriptionResponse = await fetch(`/api/sessions/${activeSession.id}/transcriptions`, {
       method: "POST",
       headers: sessionHeaders({ "Content-Type": "audio/wav", "X-Request-Id": requestId }),
@@ -629,23 +665,12 @@ async function processRecording() {
     });
     const transcription = await transcriptionResponse.json().catch(() => ({}));
     if (!transcriptionResponse.ok) throw new Error(transcription.error || "语音识别失败");
-    const text = String(transcription.text || "").trim();
+    text = String(transcription.text || "").trim();
     if (!text) throw new Error("没有识别到清楚的话，请再说一次");
-    addLine("user", text);
-    sessionMessages.push({ role: "user", content: text, requestId });
-    setVoiceState("thinking", "争吵方正在回应…", `识别结果：${text}`);
-    const reply = await streamAgent("messages", "opponent", { content: text, requestId });
-    sessionMessages.push({ role: "opponent", content: reply, requestId });
-    const verdictPromise = judgeImmersiveTurn().catch((error) => ({ error }));
-    await speakText(reply, requestId);
-    const verdictResult = await verdictPromise;
-    if (verdictResult?.error) {
-      setVoiceState("idle", "裁判暂时没有完成判定", "你可以继续回应；异常详情已记录在服务端");
-    } else if (verdictResult?.status === "won") {
-      showArgumentOutcome(verdictResult);
-    }
+    await sendImmersiveText(text, requestId);
   } catch (error) {
     await loadSessionState().catch(() => {});
+    if (text && requestId && !hasCompletedRequest(requestId)) pendingVoiceTurn = { text, requestId };
     setVoiceState("error", `这一轮失败：${error.message}`, "点麦克风重新说一次");
   } finally {
     busy = false;
@@ -730,8 +755,9 @@ async function startMode(mode) {
   if (busy) return;
   currentMode = mode;
   page.dataset.mode = mode;
+  if (mode === "immersive") page.dataset.immersiveStarted = "false";
+  else delete page.dataset.immersiveStarted;
   page.dataset.phase = "arena";
-  delete page.dataset.immersiveStarted;
   busy = true;
   try {
     const state = await restoreOrCreateSession();
@@ -762,6 +788,7 @@ async function beginImmersiveDialogue() {
   busy = true;
   immersiveBegin.disabled = true;
   page.dataset.immersiveStarted = "true";
+  renderMessages(sessionMessages);
   immersivePrelude.classList.add("leaving");
   try {
     clearTimeout(immersivePreludeTimer);
@@ -903,7 +930,24 @@ recordButton?.addEventListener("click", () => {
   if (mediaRecorder?.state === "recording") stopRecording();
   else if (!busy) {
     stopAutoListening();
-    startRecording();
+    if (pendingVoiceTurn) {
+      const turn = pendingVoiceTurn;
+      busy = true;
+      updateReviewButton();
+      sendImmersiveText(turn.text, turn.requestId)
+        .catch(async (error) => {
+          await loadSessionState().catch(() => {});
+          if (!hasCompletedRequest(turn.requestId)) pendingVoiceTurn = turn;
+          setVoiceState("error", `这一轮失败：${error.message}`, "点麦克风重新说一次");
+        })
+        .finally(() => {
+          busy = false;
+          updateReviewButton();
+          if (currentMode === "immersive" && !argumentEnded && page.dataset.phase === "arena") queueAutoListening();
+        });
+    } else {
+      startRecording();
+    }
   }
 });
 
@@ -958,7 +1002,9 @@ document.querySelector("#replyForm").addEventListener("submit", async (event) =>
   if (busy || currentMode !== "training") return;
   const text = input.value.trim();
   if (!text) return;
-  const requestId = `message-${crypto.randomUUID()}`;
+  const retrying = pendingTrainingTurn?.text === text;
+  const requestId = retrying ? pendingTrainingTurn.requestId : `message-${crypto.randomUUID()}`;
+  if (!retrying) pendingTrainingTurn = null;
   addLine("user", text);
   sessionMessages.push({ role: "user", content: text, requestId });
   input.value = "";
@@ -967,9 +1013,14 @@ document.querySelector("#replyForm").addEventListener("submit", async (event) =>
     modelState.textContent = "争吵方正在回应…";
     const opponentReply = await streamAgent("messages", "opponent", { content: text, requestId });
     sessionMessages.push({ role: "opponent", content: opponentReply, requestId });
+    pendingTrainingTurn = null;
     if (coachMode) await askCoach(`coach-${requestId}`);
   } catch (error) {
     await loadSessionState().catch(() => {});
+    if (!hasCompletedRequest(requestId)) {
+      pendingTrainingTurn = { text, requestId };
+      input.value = text;
+    }
     addLine("opponent", `练习暂停：${error.message}`);
   } finally {
     busy = false; submit.disabled = false; coachToggle.disabled = false; submit.textContent = "说"; updateReviewButton(); setReadyState(); input.focus();
