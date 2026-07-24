@@ -785,6 +785,19 @@ function detectImageFormat(buffer) {
   throw new Error("图片模型返回了不支持的文件格式");
 }
 
+async function publishSceneImageAsWebp(imagePath, baseName) {
+  const sourceBuffer = fs.readFileSync(imagePath);
+  detectImageFormat(sourceBuffer);
+  const webpPath = path.join(path.dirname(imagePath), `${baseName}.webp`);
+  if (imagePath === webpPath) return webpPath;
+  const webpBuffer = await sharp(sourceBuffer).webp({ quality: 78, effort: 6 }).toBuffer();
+  detectImageFormat(webpBuffer);
+  durableWriteFile(webpPath, webpBuffer);
+  fs.unlinkSync(imagePath);
+  syncDirectory(path.dirname(webpPath));
+  return webpPath;
+}
+
 const imageProvider = createImageProvider({
   endpointFor: (config, operation) => buildImageEndpoint(config.imageBaseUrl || config.baseUrl, operation),
   detectFormat: detectImageFormat
@@ -1051,25 +1064,25 @@ async function runSceneJob(id) {
     const backgroundPath = await ensureSceneImage(stagePath, id, scene, "artPrompt", "background", "1536x1024", 60, "正在从母图派生沉浸背景", { referenceImagePath: thumbnailPath, promptBuilder: backgroundEditPrompt });
     const opponentPath = await ensureSceneImage(stagePath, id, scene, "opponentArtPrompt", "opponent", "1024x1536", 76, "正在从母图派生争吵人形象", { referenceImagePath: thumbnailPath, promptBuilder: opponentEditPrompt, transparentCutout: true });
 
-    const backgroundFormat = detectImageFormat(fs.readFileSync(backgroundPath));
-    const thumbnailFormat = detectImageFormat(fs.readFileSync(thumbnailPath));
-    const opponentFormat = detectImageFormat(fs.readFileSync(opponentPath));
+    const publishedBackgroundPath = await publishSceneImageAsWebp(backgroundPath, "background");
+    const publishedThumbnailPath = await publishSceneImageAsWebp(thumbnailPath, "thumbnail");
+    const publishedOpponentPath = await publishSceneImageAsWebp(opponentPath, "opponent");
     scene = {
       id: job.sceneId,
       source: "generated",
       ...scene,
-      art: `scene-assets/${job.sceneId}/background.${backgroundFormat.extension}`,
-      thumbnailArt: `scene-assets/${job.sceneId}/thumbnail.${thumbnailFormat.extension}`,
-      opponentArt: `scene-assets/${job.sceneId}/opponent.${opponentFormat.extension}`
+      art: `scene-assets/${job.sceneId}/background.webp`,
+      thumbnailArt: `scene-assets/${job.sceneId}/thumbnail.webp`,
+      opponentArt: `scene-assets/${job.sceneId}/opponent.webp`
     };
     atomicWriteJson(path.join(stagePath, "scene.json"), scene);
 
     updateJob(id, { status: "validating", progress: 80, message: "正在检查场景完整性" });
     const persistedScene = JSON.parse(fs.readFileSync(path.join(stagePath, "scene.json"), "utf8"));
     validateSceneDefinition(persistedScene);
-    detectImageFormat(fs.readFileSync(backgroundPath));
-    detectImageFormat(fs.readFileSync(thumbnailPath));
-    detectImageFormat(fs.readFileSync(opponentPath));
+    detectImageFormat(fs.readFileSync(publishedBackgroundPath));
+    detectImageFormat(fs.readFileSync(publishedThumbnailPath));
+    detectImageFormat(fs.readFileSync(publishedOpponentPath));
 
     updateJob(id, { status: "publishing", progress: 95, message: "正在发布完整场景" });
     if (fs.existsSync(draftPath)) fs.unlinkSync(draftPath);

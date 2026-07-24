@@ -211,7 +211,7 @@ async function loadReplay() {
   if (!response.ok) throw new Error(data.error || "回放无法打开");
   replay = data;
   setArt(replay.scene.art);
-  document.title = `${replay.scene.title} · 对话回放`;
+  document.title = "吵了么";
   document.querySelector("#replayKicker").textContent = replay.scene.kicker || "对话回放";
   document.querySelector("#replayTitle").textContent = replay.scene.title;
   document.querySelector("#replayOutcome").textContent = replay.outcome.resultCopy || replay.outcome.achievement || "";

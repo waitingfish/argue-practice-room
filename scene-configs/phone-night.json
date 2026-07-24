@@ -17,9 +17,9 @@
   "analysisPrompt": "重点观察用户能否在伴侣防御或回避时保持沟通意图清楚：是否把目标从争输赢转向理解彼此，是否能表达感受、承担自己的部分、提出具体请求；所有倾向必须引用用户原话，不能做心理诊断。",
   "winCondition": "对方明确愿意继续沟通，或接受一个具体的沟通安排，例如现在先听用户说两分钟、各自讲一件真正难受的事、暂停到明早某个时间再聊，并承认不想再用回避或指责结束这次矛盾。",
   "refereePrompt": "重点检查女朋友是否真正从回避、防御转为愿意沟通，或给出明确的继续沟通时间和方式；“随便你”“我累了”“以后再说”这类没有具体安排的回应不算达成。",
-  "art": "assets/sketch-default/immersive-bg.png",
-  "thumbnailArt": "assets/sketch-default/home-card.png",
-  "opponentArt": "assets/sketch-default/opponent-cutout.png",
+  "art": "assets/sketch-default/immersive-bg.webp",
+  "thumbnailArt": "assets/sketch-default/home-card.webp",
+  "opponentArt": "assets/sketch-default/opponent-cutout.webp",
   "artPrompt": "Use case: illustration-story. Asset type: immersive mode full-screen scene background. Simple hand-drawn charcoal bedroom background: late-night couple conflict after an argument, rumpled bed, bedside table and dim lamp on the left, quiet empty room, right third reserved for a female girlfriend character cutout. Rough graphite pencil and charcoal sketch, monochrome black and gray textured paper, no people, no text, no logo, no watermark.",
   "thumbnailArtPrompt": "Use case: illustration-story. Asset type: homepage featured scene thumbnail. Simple hand-drawn charcoal and black ink collage thumbnail: late-night bedroom after a couple's argument, one young woman girlfriend sitting on the right edge of the bed looking tired and defensive. Gender: female. Black background, off-white torn paper cutout, visible sketch strokes, no text, no logo, no watermark.",
   "opponentArtPrompt": "Monochrome hand-drawn tired defensive girlfriend sitting on the edge of a bed. Gender: female. Messy bun, loose T-shirt and pajama pants, bare feet, three-quarter view facing left, black ink and graphite on off-white torn paper with irregular paper edge, expressive line art, three-quarter body."

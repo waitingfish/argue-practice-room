@@ -34,7 +34,7 @@ async function saveCreatedScene(job) {
     id,
     url: job.sceneUrl,
     title: input.value.trim().slice(0, 36) || "新造的场景",
-    art: "assets/sketch-default/home-card.png",
+    art: "assets/sketch-default/home-card.webp",
     createdAt: new Date().toISOString()
   };
 

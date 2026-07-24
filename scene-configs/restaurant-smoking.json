@@ -17,9 +17,9 @@
   "analysisPrompt": "重点观察用户是否能区分事实、影响和请求，面对对方轻描淡写时是否保持清晰表达，是否能提出停止吸烟或请店员介入的可执行方案；所有倾向必须引用用户原话，不能做心理诊断。",
   "winCondition": "对方明确同意停止在餐厅吸烟，熄灭香烟，移步室外，或接受店员介入并停止继续影响用户。",
   "refereePrompt": "只在对方明确停止室内吸烟、熄烟、移步室外或接受店员处理时判赢；嘴上敷衍但继续抽、转移话题或反向指责都不算达成。",
-  "art": "assets/restaurant-smoking/immersive-bg.png",
-  "thumbnailArt": "assets/restaurant-smoking/home-card.png",
-  "opponentArt": "assets/restaurant-smoking/opponent-cutout.png",
+  "art": "assets/restaurant-smoking/immersive-bg.webp",
+  "thumbnailArt": "assets/restaurant-smoking/home-card.webp",
+  "opponentArt": "assets/restaurant-smoking/opponent-cutout.webp",
   "artPrompt": "Use case: illustration-story. Asset type: immersive mode full-screen scene background. Simple hand-drawn charcoal restaurant background: small restaurant, neighboring table, ashtray, cigarette smoke haze, no people, right third reserved for a male character cutout. Rough graphite pencil and charcoal sketch, monochrome black and gray textured paper, no text, no logo, no watermark.",
   "thumbnailArtPrompt": "Use case: illustration-story. Asset type: homepage featured scene thumbnail. Simple hand-drawn charcoal and black ink collage thumbnail: a man smoking in a restaurant, annoyed and dismissive, smoky table, off-white torn paper cutout on black background, no text, no logo, no watermark.",
   "opponentArtPrompt": "Monochrome hand-drawn adult male restaurant smoker. Gender: male. Defensive and dismissive expression, holding a cigarette, casual dark shirt, slightly leaning back with one palm raised, three-quarter view facing left, black ink and graphite on off-white torn paper with irregular paper edge, expressive line art, three-quarter body."

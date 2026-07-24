@@ -1,7 +1,7 @@
 const fallbackPresetScenes = [
-  { id: "restaurant-smoking", title: "餐厅。邻座刚点起一根烟。", art: "assets/restaurant-smoking/home-card.png", url: "/scene/restaurant-smoking" },
-  { id: "phone-night", title: "深夜。你准备找她沟通。", art: "assets/sketch-default/home-card.png", url: "/scene/phone-night" },
-  { id: "roommate-gaming", title: "合租房。室友还在打游戏。", art: "assets/roommate-gaming/home-card.png", url: "/scene/roommate-gaming" }
+  { id: "restaurant-smoking", title: "餐厅。邻座刚点起一根烟。", art: "assets/restaurant-smoking/home-card.webp", url: "/scene/restaurant-smoking" },
+  { id: "phone-night", title: "深夜。你准备找她沟通。", art: "assets/sketch-default/home-card.webp", url: "/scene/phone-night" },
+  { id: "roommate-gaming", title: "合租房。室友还在打游戏。", art: "assets/roommate-gaming/home-card.webp", url: "/scene/roommate-gaming" }
 ];
 const presetSlotClasses = ["left-scene", "center-scene", "right-scene"];
 let presetScenes = fallbackPresetScenes;
@@ -9,7 +9,7 @@ let presetStartIndex = 0;
 
 function sceneArtUrl(art) {
   const value = String(art || "");
-  if (!value) return "assets/sketch-default/home-card.png";
+  if (!value) return "assets/sketch-default/home-card.webp";
   return value.startsWith("/") ? value : `/${value}`;
 }
 
