@@ -1,4 +1,3 @@
-const createdScenesKey = "argue-created-scenes";
 const fallbackPresetScenes = [
   { id: "restaurant-smoking", title: "餐厅。邻座刚点起一根烟。", art: "assets/restaurant-smoking/home-card.png", url: "/scene/restaurant-smoking" },
   { id: "phone-night", title: "深夜。你准备找她沟通。", art: "assets/sketch-default/home-card.png", url: "/scene/phone-night" },
@@ -7,15 +6,6 @@ const fallbackPresetScenes = [
 const presetSlotClasses = ["left-scene", "center-scene", "right-scene"];
 let presetScenes = fallbackPresetScenes;
 let presetStartIndex = 0;
-
-function readCreatedScenes() {
-  try {
-    const scenes = JSON.parse(localStorage.getItem(createdScenesKey) || "[]");
-    return Array.isArray(scenes) ? scenes : [];
-  } catch {
-    return [];
-  }
-}
 
 function sceneArtUrl(art) {
   const value = String(art || "");
@@ -37,7 +27,7 @@ function formatCreatedAt(value) {
 
 function normalizedCreatedScenes() {
   const seen = new Set();
-  return readCreatedScenes()
+  return window.createdScenesStore.read()
     .filter((scene) => scene && scene.url && scene.title)
     .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
     .filter((scene) => {

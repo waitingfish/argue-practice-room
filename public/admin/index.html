@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>练习室后台配置</title>
-    <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="/shared/styles.css" />
   </head>
   <body class="admin-page">
     <main class="admin-shell">
@@ -14,7 +14,7 @@
           <h1>练习室后台</h1>
           <p>模型凭证只保存在本机服务端，不会发送到练习页面。</p>
         </div>
-        <a class="admin-link" href="./index.html">返回练习室</a>
+        <a class="admin-link" href="/">返回练习室</a>
       </header>
 
       <section class="admin-panel" id="loginPanel">
@@ -90,6 +90,6 @@
         <p class="form-note">支持标准 OpenAI Audio API、小米 MiMo Chat 音频协议和本机 whisper.cpp。MiMo 的 ASR/TTS 使用 Chat Completions，不是标准 /audio 路径；四类测试彼此独立，都会使用当前表单内容，不必先保存。</p>
       </section>
     </main>
-    <script src="./admin.js"></script>
+    <script src="/admin/app.js"></script>
   </body>
 </html>

@@ -7,7 +7,6 @@ const status = document.querySelector("#createStatus");
 const reference = document.querySelector("#jobReference");
 const note = document.querySelector("#createNote");
 const storageKey = "argue-scene-generation-job";
-const createdScenesKey = "argue-created-scenes";
 
 let eventSource = null;
 let pollTimer = null;
@@ -22,15 +21,6 @@ function savePending(value) {
 
 function clearPending() {
   localStorage.removeItem(storageKey);
-}
-
-function readCreatedScenes() {
-  try {
-    const scenes = JSON.parse(localStorage.getItem(createdScenesKey) || "[]");
-    return Array.isArray(scenes) ? scenes : [];
-  } catch {
-    return [];
-  }
 }
 
 function sceneIdFromUrl(url) {
@@ -62,8 +52,7 @@ async function saveCreatedScene(job) {
     // The scene URL is enough for the local history; details can be missing during a transient refresh.
   }
 
-  const existing = readCreatedScenes().filter((item) => (item.id || item.url) !== (scene.id || scene.url));
-  localStorage.setItem(createdScenesKey, JSON.stringify([scene, ...existing].slice(0, 12)));
+  window.createdScenesStore.upsert(scene);
 }
 
 function stopUpdates() {

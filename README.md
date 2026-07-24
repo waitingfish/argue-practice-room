@@ -127,17 +127,30 @@ npm run voice:start
 
 ```text
 .
-├── admin.html / admin.js        # 后台配置
-├── create.html / create.js      # 一句话生成场景
-├── index.html / lobby.js        # 首页和本地场景缓存
-├── scene.html / scene.js        # 场景练习页
-├── server.js                    # Node 服务端
-├── database.js                  # SQLite 封装
+├── server.js                    # 兼容启动入口
+├── src/
+│   ├── bootstrap.js             # 启动入口
+│   ├── application.js           # 依赖组合根
+│   ├── http/                    # 路由和 HTTP 适配
+│   ├── domain/                  # 会话、轮次、复盘、场景生成用例
+│   ├── agents/                  # 争吵方、教练、裁判、分析师
+│   ├── providers/               # 对话、图片、转写、语音外部服务
+│   ├── repositories/            # SQLite 窄仓储
+│   └── jobs/                    # 队列与场景生成 worker
+├── public/
+│   ├── shared/                  # 跨页样式与场景历史存储
+│   ├── lobby/                   # 首页
+│   ├── create/                  # 创建场景
+│   ├── scene/                   # 场景练习
+│   ├── replay/                  # 回放
+│   └── admin/                   # 后台配置
 ├── scene-configs/               # 内置场景配置
 ├── assets/                      # 内置场景图片资源
 ├── scripts/migrate-dev.js       # 开发期一次性迁移脚本
 └── data/                        # 本地运行时数据，已忽略
 ```
+
+依赖方向和迁移约束见 [`docs/architecture.md`](docs/architecture.md)。
 
 场景配置字段包括：
 
