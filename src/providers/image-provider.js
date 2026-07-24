@@ -1,4 +1,4 @@
-function createImageProvider({ endpointFor, detectFormat }) {
+function createImageProvider({ endpointFor, detectFormat, logger = console }) {
   async function readResponse(response, timeoutMs) {
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.error?.message || `图片模型返回 ${response.status}`);
@@ -23,13 +23,22 @@ function createImageProvider({ endpointFor, detectFormat }) {
     const apiKey = config.imageApiKey || config.apiKey;
     if (!apiKey) throw new Error("未配置图片模型 API Key");
     const timeoutMs = Number(config.imageTimeoutSeconds || 180) * 1000;
-    const response = await fetch(endpointFor(config, "generations"), {
+    const endpoint = endpointFor(config, "generations");
+    const startedAt = Date.now();
+    const response = await fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
       body: JSON.stringify({ model: config.imageModel || "gpt-image-1", prompt, size, response_format: "b64_json" }),
       signal: AbortSignal.timeout(timeoutMs)
     });
-    return readResponse(response, timeoutMs);
+    try {
+      const image = await readResponse(response, timeoutMs);
+      logger.info?.("图片生成调用完成", { endpoint, model: config.imageModel || "gpt-image-1", size, statusCode: response.status, durationMs: Date.now() - startedAt, bytes: image.buffer.length, extension: image.extension });
+      return image;
+    } catch (error) {
+      logger.warn?.("图片生成调用失败", { endpoint, model: config.imageModel || "gpt-image-1", size, statusCode: response.status, durationMs: Date.now() - startedAt, message: error.message });
+      throw error;
+    }
   }
 
   async function edit(config, prompt, referenceImage, size = "1536x1024") {
@@ -43,13 +52,22 @@ function createImageProvider({ endpointFor, detectFormat }) {
     form.append("size", size);
     form.append("response_format", "b64_json");
     form.append("image", new Blob([referenceImage], { type: format.mime }), `reference.${format.extension}`);
-    const response = await fetch(endpointFor(config, "edits"), {
+    const endpoint = endpointFor(config, "edits");
+    const startedAt = Date.now();
+    const response = await fetch(endpoint, {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}` },
       body: form,
       signal: AbortSignal.timeout(timeoutMs)
     });
-    return readResponse(response, timeoutMs);
+    try {
+      const image = await readResponse(response, timeoutMs);
+      logger.info?.("图片编辑调用完成", { endpoint, model: config.imageModel || "gpt-image-1", size, statusCode: response.status, durationMs: Date.now() - startedAt, bytes: image.buffer.length, extension: image.extension, referenceBytes: referenceImage.length });
+      return image;
+    } catch (error) {
+      logger.warn?.("图片编辑调用失败", { endpoint, model: config.imageModel || "gpt-image-1", size, statusCode: response.status, durationMs: Date.now() - startedAt, message: error.message, referenceBytes: referenceImage.length });
+      throw error;
+    }
   }
 
   return Object.freeze({ generate, edit });

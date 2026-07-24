@@ -5,10 +5,12 @@ function createChatProvider({
   requestBody,
   readContent,
   readDelta,
-  createVisibleChunkFilter
+  createVisibleChunkFilter,
+  logger = console
 }) {
   async function complete(config, scene, messages, role = "opponent") {
     const endpoint = endpointFor(config);
+    const startedAt = Date.now();
     const response = await fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${config.apiKey}` },
@@ -20,14 +22,19 @@ function createChatProvider({
       signal: AbortSignal.timeout(30000)
     });
     const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(data.error?.message || `模型接口返回 ${response.status}`);
+    if (!response.ok) {
+      logger.warn?.("聊天模型调用失败", { endpoint, model: config.model, role, statusCode: response.status, durationMs: Date.now() - startedAt });
+      throw new Error(data.error?.message || `模型接口返回 ${response.status}`);
+    }
     const content = readContent(data);
     if (!content) throw new Error("模型没有返回有效内容");
+    logger.info?.("聊天模型调用完成", { endpoint, model: config.model, role, durationMs: Date.now() - startedAt });
     return content;
   }
 
   async function stream(config, scene, messages, onChunk, signal, role = "opponent") {
     const endpoint = endpointFor(config);
+    const startedAt = Date.now();
     const response = await fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${config.apiKey}` },
@@ -41,11 +48,13 @@ function createChatProvider({
     });
     if (!response.ok) {
       const data = await response.json().catch(() => ({}));
+      logger.warn?.("流式聊天模型调用失败", { endpoint, model: config.model, role, statusCode: response.status, durationMs: Date.now() - startedAt });
       throw new Error(data.error?.message || `模型接口返回 ${response.status}`);
     }
     if ((response.headers.get("content-type") || "").includes("application/json")) {
       const content = readContent(await response.json());
       if (content) onChunk(content);
+      logger.info?.("流式聊天模型以 JSON 完成", { endpoint, model: config.model, role, durationMs: Date.now() - startedAt });
       return content;
     }
 
@@ -62,6 +71,7 @@ function createChatProvider({
         const payload = trimmed.slice(5).trim();
         if (payload === "[DONE]") {
           emitVisibleChunk("", true);
+          logger.info?.("流式聊天模型调用完成", { endpoint, model: config.model, role, durationMs: Date.now() - startedAt });
           return "";
         }
         try {
@@ -73,6 +83,7 @@ function createChatProvider({
       }
     }
     emitVisibleChunk("", true);
+    logger.info?.("流式聊天模型连接结束", { endpoint, model: config.model, role, durationMs: Date.now() - startedAt });
     return "";
   }
 

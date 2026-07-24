@@ -1,6 +1,8 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { URL } = require("node:url");
+const crypto = require("node:crypto");
+const { serializeError } = require("../logger");
 
 const mimeTypes = {
   ".html": "text/html; charset=utf-8",
@@ -64,9 +66,31 @@ function createRouter({
   apiHandler,
   resolveReplayAsset,
   resolveSceneAsset,
-  onError = console.error
+  logger = console,
+  onError = (error) => logger.error("HTTP 服务异常", { error: serializeError(error) })
 }) {
   return async function router(request, response) {
+    const startedAt = Date.now();
+    const requestId = request.headers["x-request-id"] || crypto.randomUUID();
+    request.requestId = String(requestId);
+    response.setHeader("X-Request-Id", request.requestId);
+    response.once("finish", () => {
+      const pathname = request.url ? new URL(request.url, `http://${host}`).pathname : "";
+      const context = {
+        requestId: request.requestId,
+        method: request.method,
+        path: pathname,
+        statusCode: response.statusCode,
+        durationMs: Date.now() - startedAt,
+        ...(request.logContext || {})
+      };
+      if (pathname.startsWith("/api/") || response.statusCode >= 400) {
+        const level = response.statusCode >= 500 ? "error" : response.statusCode >= 400 ? "warn" : "info";
+        logger[level]("HTTP 请求完成", context);
+      } else {
+        logger.debug?.("HTTP 静态资源完成", context);
+      }
+    });
     try {
       const pathname = new URL(request.url, `http://${host}`).pathname;
       if (pathname.startsWith("/api/")) return await apiHandler(request, response, pathname);
@@ -92,7 +116,7 @@ function createRouter({
       response.writeHead(404);
       return response.end("Not found");
     } catch (error) {
-      onError(error);
+      onError(error, { requestId: request.requestId, ...(request.logContext || {}) });
       if (response.headersSent) return response.destroy(error);
       response.writeHead(500, { "Content-Type": "application/json; charset=utf-8" });
       return response.end(JSON.stringify({ error: error.message || "服务异常" }));

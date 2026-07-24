@@ -24,6 +24,7 @@ const { createSessionRoutes } = require("./http/routes/sessions");
 const { createSceneRoutes } = require("./http/routes/scenes");
 const { createReplayRoutes } = require("./http/routes/replays");
 const { createAdminRoutes } = require("./http/routes/admin");
+const { logger, serializeError } = require("./logger");
 
 const root = path.resolve(__dirname, "..");
 const dataDir = path.join(root, "data");
@@ -169,7 +170,18 @@ function saveJob(job) {
 function updateJob(id, patch) {
   const job = readJob(id);
   if (!job) throw new Error(`任务不存在：${id}`);
-  return saveJob({ ...job, ...patch });
+  const saved = saveJob({ ...job, ...patch });
+  if (patch.status && patch.status !== job.status) {
+    logger.info("场景生成任务状态变更", {
+      jobId: id,
+      sceneId: saved.sceneId,
+      from: job.status,
+      to: saved.status,
+      progress: saved.progress,
+      error: saved.error || null
+    });
+  }
+  return saved;
 }
 
 function findJobByIdempotencyKey(key) {
@@ -179,6 +191,10 @@ function findJobByIdempotencyKey(key) {
 function sendJson(response, status, data) {
   response.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
   response.end(JSON.stringify(data));
+}
+
+function addRequestContext(request, context) {
+  request.logContext = { ...(request.logContext || {}), ...context };
 }
 
 function getBody(request) {
@@ -250,10 +266,9 @@ function buildImageEndpoint(baseUrl, operation) {
 }
 
 function logModelError(scope, error, details = {}) {
-  console.error(`[${new Date().toISOString()}] ${scope} 异常`, {
+  logger.error(`${scope} 异常`, {
     ...details,
-    message: error?.message || String(error),
-    stack: error?.stack
+    error: serializeError(error)
   });
 }
 
@@ -627,7 +642,8 @@ const chatProvider = createChatProvider({
   requestBody: chatCompletionBody,
   readContent: readChatContent,
   readDelta: readDeltaContent,
-  createVisibleChunkFilter: createThinkingFilter
+  createVisibleChunkFilter: createThinkingFilter,
+  logger
 });
 
 async function callModel(config, scene, messages, role = "opponent") {
@@ -800,7 +816,8 @@ async function publishSceneImageAsWebp(imagePath, baseName) {
 
 const imageProvider = createImageProvider({
   endpointFor: (config, operation) => buildImageEndpoint(config.imageBaseUrl || config.baseUrl, operation),
-  detectFormat: detectImageFormat
+  detectFormat: detectImageFormat,
+  logger
 });
 
 async function createSceneImage(config, artPrompt, size = "1536x1024") {
@@ -1110,6 +1127,7 @@ async function runSceneJob(id) {
 const sceneWorker = createSceneGenerationWorker({ run: runSceneJob });
 const sceneQueue = createQueue({
   worker: sceneWorker,
+  logger,
   onError(error, jobId) {
     logModelError("场景生成队列", error, { jobId });
   }
@@ -1162,7 +1180,8 @@ function transcriptionEndpoint(config) {
 
 const transcriptionProvider = createTranscriptionProvider({
   endpointFor: transcriptionEndpoint,
-  readChatContent
+  readChatContent,
+  logger
 });
 
 async function callTranscription(config, audio, mimeType = "audio/webm", { allowEmpty = false } = {}) {
@@ -1193,7 +1212,8 @@ function speechVoiceForScene(config, scene = {}) {
 
 const speechProvider = createSpeechProvider({
   endpointFor: speechEndpoint,
-  voiceFor: speechVoiceForScene
+  voiceFor: speechVoiceForScene,
+  logger
 });
 
 async function callSpeech(config, input, options = {}) {
@@ -1403,14 +1423,16 @@ const sessionService = createSessionService({
 });
 const turnService = createTurnService({
   sessions: repositories.sessions,
-  generateReply: generateOpponentReply
+  generateReply: generateOpponentReply,
+  logger
 });
 const reviewService = createReviewService({
   sessions: repositories.sessions,
   judgeConversation,
   analyzeConversation,
   localJudge: localRefereeVerdict,
-  localAnalyze: localSessionReport
+  localAnalyze: localSessionReport,
+  logger
 });
 
 const apiRoutes = [
@@ -1437,6 +1459,8 @@ async function handleApi(request, response, pathname) {
         opponentGender: payload.opponentGender,
         config
       });
+      addRequestContext(request, { jobId: job.id, sceneId: job.sceneId, created });
+      logger.info("场景生成任务已提交", { requestId: request.requestId, jobId: job.id, sceneId: job.sceneId, created });
       const status = !created && job.status === "completed" ? 200 : 202;
       return sendJson(response, status, {
         ...publicJob(job),
@@ -1449,6 +1473,7 @@ async function handleApi(request, response, pathname) {
 
   const jobRoute = pathname.match(/^\/api\/scene-jobs\/([a-z0-9-]+)(\/events)?$/);
   if (jobRoute && request.method === "GET") {
+    addRequestContext(request, { jobId: jobRoute[1], stream: Boolean(jobRoute[2]) });
     const job = readJob(jobRoute[1]);
     if (!job) return sendJson(response, 404, { error: "生成任务不存在" });
     if (!jobRoute[2]) return sendJson(response, 200, publicJob(job));
@@ -1478,6 +1503,7 @@ async function handleApi(request, response, pathname) {
   if (sessionRoute) {
     const sessionId = sessionRoute[1];
     const action = sessionRoute[2] || "";
+    addRequestContext(request, { sessionId, action: action || "state" });
     let deletePayload = null;
     if (!action && effectiveMethod === "DELETE" && !sessionToken(request)) {
       deletePayload = await getBody(request).catch(() => ({}));
@@ -1489,6 +1515,7 @@ async function handleApi(request, response, pathname) {
     if (!session) return sendJson(response, 401, { error: "会话不存在或访问令牌无效" });
     const scene = readSceneConfig(session.sceneId);
     if (!scene) return sendJson(response, 410, { error: "这个会话对应的场景已经不存在" });
+    addRequestContext(request, { sceneId: scene.id, mode: session.mode });
 
     if (!action && request.method === "GET") return sendJson(response, 200, sessionState(session));
 
@@ -1514,6 +1541,7 @@ async function handleApi(request, response, pathname) {
       if (configError) return sendJson(response, 503, { error: configError });
       const mimeType = String(request.headers["content-type"] || "audio/webm").split(";")[0];
       const requestId = String(request.headers["x-request-id"] || "");
+      addRequestContext(request, { turnRequestId: requestId });
       if (!validRequestId(requestId)) return sendJson(response, 400, { error: "录音请求标识无效" });
       let audioBytes = 0;
       try {
@@ -1557,6 +1585,7 @@ async function handleApi(request, response, pathname) {
       if (configError) return sendJson(response, 503, { error: configError });
       const payload = await getBody(request);
       const requestId = String(payload.requestId || "");
+      addRequestContext(request, { turnRequestId: requestId });
       const savedMessage = requestId ? database.getMessage(sessionId, requestId, "opponent") : null;
       const input = String(savedMessage?.content || payload.input || "").trim();
       if (!input || input.length > 4096) return sendJson(response, 400, { error: "语音文本长度必须在 1 到 4096 字之间" });
@@ -1575,6 +1604,7 @@ async function handleApi(request, response, pathname) {
       if (configError) return sendJson(response, 503, { error: configError });
       const payload = await getBody(request);
       const requestId = String(payload.requestId || "");
+      addRequestContext(request, { turnRequestId: requestId });
       const savedMessage = requestId ? database.getMessage(sessionId, requestId, "opponent") : null;
       const input = String(savedMessage?.content || payload.input || "").trim();
       if (!input || input.length > 4096) return sendJson(response, 400, { error: "语音文本长度必须在 1 到 4096 字之间" });
@@ -1592,6 +1622,7 @@ async function handleApi(request, response, pathname) {
       const payload = await getBody(request);
       const content = String(payload.content || "").trim();
       const requestId = String(payload.requestId || "");
+      addRequestContext(request, { turnRequestId: requestId });
       if (!validRequestId(requestId)) return sendJson(response, 400, { error: "缺少有效的 requestId" });
       if (!content || content.length > 1600) return sendJson(response, 400, { error: "消息长度必须在 1 到 1600 字之间" });
       try {
@@ -1621,6 +1652,7 @@ async function handleApi(request, response, pathname) {
     if (action === "coach" && request.method === "POST") {
       const payload = await getBody(request);
       const requestId = String(payload.requestId || "");
+      addRequestContext(request, { turnRequestId: requestId });
       if (!validRequestId(requestId)) return sendJson(response, 400, { error: "缺少有效的 requestId" });
       if (session.mode === "immersive") return sendJson(response, 409, { error: "沉浸模式不启用帮忙专家" });
       if (!session.coachEnabled) return sendJson(response, 409, { error: "请先开启找人帮忙" });
@@ -1747,6 +1779,7 @@ const router = createRouter({
   publicDir: path.join(root, "public"),
   assetsDir: path.join(root, "assets"),
   apiHandler: handleApi,
+  logger,
   resolveReplayAsset(pathname) {
     const match = pathname.match(/^\/replay-assets\/(replay-[a-f0-9]{24})\/(\d{3}-(?:user|opponent)\.wav)$/);
     if (!match || !database.getReplay(match[1])) return null;
@@ -1760,8 +1793,8 @@ const router = createRouter({
     const assetPath = path.join(packageDir, match[2]);
     return fs.existsSync(path.join(packageDir, "scene.json")) && fs.existsSync(assetPath) ? assetPath : null;
   },
-  onError(error) {
-    console.error(`[${new Date().toISOString()}] HTTP 服务异常`, { message: error.message, stack: error.stack });
+  onError(error, context = {}) {
+    logger.error("HTTP 服务异常", { ...context, error: serializeError(error) });
   }
 });
 
@@ -1776,7 +1809,7 @@ function shutdown() {
 
 function startServer() {
   server.listen(port, host, () => {
-    console.log(`吵架练习室已启动：http://${host}:${port}`);
+    logger.info("吵架练习室已启动", { url: `http://${host}:${port}`, port, host });
     recoverJobs();
   });
   process.once("SIGINT", shutdown);

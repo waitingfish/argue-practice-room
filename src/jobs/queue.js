@@ -1,4 +1,6 @@
-function createQueue({ worker, onError = console.error }) {
+const { serializeError } = require("../logger");
+
+function createQueue({ worker, onError = console.error, logger = console }) {
   const pending = [];
   const queued = new Set();
   let processing = false;
@@ -11,8 +13,12 @@ function createQueue({ worker, onError = console.error }) {
         const id = pending.shift();
         queued.delete(id);
         try {
+          const startedAt = Date.now();
+          logger.info?.("队列任务开始", { jobId: id, pending: pending.length });
           await worker(id);
+          logger.info?.("队列任务完成", { jobId: id, durationMs: Date.now() - startedAt, pending: pending.length });
         } catch (error) {
+          logger.error?.("队列任务异常", { jobId: id, error: serializeError(error) });
           onError(error, id);
         }
       }
@@ -25,6 +31,7 @@ function createQueue({ worker, onError = console.error }) {
     if (queued.has(id)) return false;
     queued.add(id);
     pending.push(id);
+    logger.info?.("队列任务入队", { jobId: id, pending: pending.length });
     setImmediate(drain);
     return true;
   }
