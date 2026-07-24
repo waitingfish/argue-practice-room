@@ -16,6 +16,10 @@
 
 ![吵架练习室训练对话界面](docs/images/training-room.jpg)
 
+### 沉浸模式
+
+![吵架练习室沉浸模式界面](docs/images/immersive-mode.jpg)
+
 ## 技术栈
 
 - 前端：原生 HTML、CSS、JavaScript

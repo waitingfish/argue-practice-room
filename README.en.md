@@ -16,6 +16,10 @@ The project is currently in active foundational development, with a focus on val
 
 ![Argument Practice Room training conversation screen](docs/images/training-room.jpg)
 
+### Immersive Mode
+
+![Argument Practice Room immersive mode screen](docs/images/immersive-mode.jpg)
+
 ## Tech Stack
 
 - Frontend: vanilla HTML, CSS, and JavaScript
